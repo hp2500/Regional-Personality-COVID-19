@@ -10,11 +10,158 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # MAC
  knitr::opts_knit$set(root.dir = '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data')
+ 
+ library(tidyverse)
+
+```
+
+# Import Data
+```{r}
+# read data
+df <- read_csv('mp_features.csv')
+df %>% head()
+
+df_pers <- read_csv('gps_study_questionnares.csv')
+df_pers %>% head()
+
+
+df_home <- read_csv('home2.csv')
+df_home %>% head()
+
+```
+
+# Explore and Clean GPS Data
+
+## Fix format 
+```{r}
+
+# drop pandas index
+df = df %>% select(-X1) 
+
+# filter to march 2020
+df <- df %>% filter(date > '2020-02-29')
+
+# cast uid as factor
+df <- df %>% mutate(uid = as.factor(uid))
+
+df
+```
+
+
+## Select relevant variables 
+```{r}
+
+# picked raw entropy, too many missing in ent_value
+df <- df %>% select(uid, date, raw_ent_value, num_cluster_value,
+                    per_at_home, transition_time_value, dis_value,
+                    convex_hull_value, num_gps_records)
+```
+
+
+## Check data density
+```{r}
+
+colSums(is.na(df))
+
+df$num_gps_records %>% 
+  hist(main='GPS records per day')
+
+df %>% group_by(uid) %>% 
+  summarise(num_gps_records = sum(num_gps_records)) %>% 
+  select(num_gps_records) %>%
+  hist(main='GPS records per person')
+
+df %>% group_by(uid) %>% 
+  summarise(days = n()) %>% 
+  select(days) %>% 
+  hist(main = 'Days per person')
+
+```
+
+## Drop days and people with little data
+```{r}
+df_clean <- df %>%
+  drop_na() %>%
+  filter(num_gps_records > 20) %>% 
+  group_by(uid) %>%
+  filter(n() > 5) %>%
+  ungroup()
+
+df_clean
+```
+
+## Double check data density
+```{r}
+df_clean$num_gps_records %>% 
+  hist(main='GPS records per day')
+
+df_clean %>% group_by(uid) %>% 
+  summarise(num_gps_records = sum(num_gps_records)) %>% 
+  select(num_gps_records) %>%
+  hist(main='GPS records per person')
+
+df_clean %>% group_by(uid) %>% 
+  summarise(days = n()) %>% 
+  select(days) %>% 
+  hist(main = 'Days per person')
+```
+
+
+## Fix time 
+```{r}
+
+date_sequence <- seq.Date(min(as.Date(df$date)),
+                     max(as.Date(df$date)), 1)
+
+df_dates = data_frame(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'day')
+
+df_clean = df_clean %>% merge(df_dates, by='date') %>% 
+  arrange(uid)
+
+df_clean
+
+```
+
+## Check correlations
+```{r}
+
+df_clean %>% select(-uid, -date) %>% drop_na() %>% cor()
+
+```
+
+# Scale GPS features
+```{r}
+
+df_scaled <- df_clean %>% mutate_at(vars(-uid, -date, -num_gps_records, -day), scale)
+df_scaled
 
 ```
 
 
+
+# Explore and clean personality data
+
+## Drop irrelevant data
 ```{r}
+
+df_pers <- df_pers %>% select(identity_id, anxious_calm, critical_sympathetic, 
+                   dependable_disorganized, extroverted_reserved, 
+                   open_conventional) %>%
+  rename(uid=identity_id, 
+         n_pers=anxious_calm,
+         a_pers=critical_sympathetic,
+         c_pers=dependable_disorganized,
+         e_pers=extroverted_reserved,
+         o_pers=open_conventional) %>%
+  mutate(uid=as.factor(uid))
+
+
+```
+
+## Check distributions 
+```{r}
+df_pers %>% select(-uid) %>% hist()
 
 ```
 
