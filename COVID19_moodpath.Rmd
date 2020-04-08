@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
  knitr::opts_knit$set(root.dir = '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data')
  
  library(tidyverse)
+ library(lmerTest)
 
 ```
 
@@ -68,12 +69,12 @@ df$num_gps_records %>%
 
 df %>% group_by(uid) %>% 
   summarise(num_gps_records = sum(num_gps_records)) %>% 
-  select(num_gps_records) %>%
+  .$num_gps_records %>% 
   hist(main='GPS records per person')
 
 df %>% group_by(uid) %>% 
   summarise(days = n()) %>% 
-  select(days) %>% 
+  .$days %>% 
   hist(main = 'Days per person')
 
 ```
@@ -97,12 +98,12 @@ df_clean$num_gps_records %>%
 
 df_clean %>% group_by(uid) %>% 
   summarise(num_gps_records = sum(num_gps_records)) %>% 
-  select(num_gps_records) %>%
+  .$num_gps_records %>%
   hist(main='GPS records per person')
 
 df_clean %>% group_by(uid) %>% 
   summarise(days = n()) %>% 
-  select(days) %>% 
+  .$days %>% 
   hist(main = 'Days per person')
 ```
 
@@ -116,24 +117,25 @@ date_sequence <- seq.Date(min(as.Date(df$date)),
 df_dates = data_frame(date_sequence, 1:length(date_sequence)) 
 names(df_dates) <- c('date', 'day')
 
-df_clean = df_clean %>% merge(df_dates, by='date') %>% 
-  arrange(uid)
+df_clean = df_clean %>% 
+  merge(df_dates, by='date') %>% 
+  arrange(uid) %>%
+  as_tibble()
 
 df_clean
 
 ```
 
-## Check correlations
+
+# Calculate social distancing index
 ```{r}
 
-df_clean %>% select(-uid, -date) %>% drop_na() %>% cor()
+df_scaled <- df_clean %>% 
+  mutate_at(vars(-uid, -date, -num_gps_records, -day), scale) %>%
+  mutate(per_at_home= -per_at_home) %>%
+  rowwise() %>%
+  mutate(SDI = - mean(c(raw_ent_value:convex_hull_value)))
 
-```
-
-# Scale GPS features
-```{r}
-
-df_scaled <- df_clean %>% mutate_at(vars(-uid, -date, -num_gps_records, -day), scale)
 df_scaled
 
 ```
@@ -145,7 +147,7 @@ df_scaled
 ## Drop irrelevant data
 ```{r}
 
-df_pers <- df_pers %>% select(identity_id, anxious_calm, critical_sympathetic, 
+df_pers_clean <- df_pers %>% select(identity_id, anxious_calm, critical_sympathetic, 
                    dependable_disorganized, extroverted_reserved, 
                    open_conventional) %>%
   rename(uid=identity_id, 
@@ -159,9 +161,80 @@ df_pers <- df_pers %>% select(identity_id, anxious_calm, critical_sympathetic,
 
 ```
 
+## Recode personality scores
+```{r}
+df_pers_clean <- df_pers_clean %>% 
+  mutate(e_pers = 6-e_pers,
+         c_pers = 6-c_pers,
+         n_pers = 6-n_pers,
+         o_pers = 6-o_pers)
+
+```
+
+
+
 ## Check distributions 
 ```{r}
-df_pers %>% select(-uid) %>% hist()
+df_pers_clean %>% select(-uid) %>% map(hist, breaks=0:6) %>% invisible()
+
+```
+
+# Explore and clean home state data
+```{r}
+
+df_home_clean <- df_home %>% 
+  separate(address, into = c('city', 'state', NULL), sep=",") %>% 
+  mutate(state = str_extract(state, '[A-Z]{2}')) %>%
+  rename(uid = identity_id) %>%
+  select(uid, state) %>% 
+  filter(state %in% state.abb)
+
+
+```
+
+# Merge data 
+```{r}
+df_merged <- plyr::join_all(list(df_scaled, df_pers_clean, df_home_clean), by = 'uid', type = 'inner') %>%
+  as_tibble()
+
+df_merged 
+```
+
+# Analysis 
+## Check correlations
+```{r}
+df_merged %>% select(-uid, -date, -state) %>% cor()
+
+```
+
+# MLMs
+
+## Prepare data
+```{r}
+df_merged <- df_merged %>% 
+  select(uid, day, o_pers, c_pers, e_pers, a_pers, n_pers, SDI) %>% 
+  mutate_at(vars(-uid, -day, -SDI), scale)
+```
+
+
+## Opennness 
+```{r, warning = FALSE}
+
+# baseline
+a_baseline <- lmer(SDI ~ (1 | uid), data = df_merged, REML = F)
+summary(a_baseline)
+
+# random intercept fixed slope
+a_random_intercept <- lmer(SDI ~ day + a_pers + (1 | uid), data = df_merged, REML = F)
+summary(a_random_intercept)
+
+# random intercept random slope
+a_random_slope <- lmer(SDI ~ day + a_pers + (day | uid), data = df_merged, REML = F)
+summary(a_random_slope)
+
+# cross level interaction
+a_interaction <- lmer(SDI ~ day*a_pers + (day | uid), data = df_merged, REML = F)
+summary(a_interaction)
 
 ```
 
