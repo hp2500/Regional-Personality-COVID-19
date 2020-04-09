@@ -13,18 +13,19 @@ knitr::opts_chunk$set(echo = TRUE)
  
  library(tidyverse)
  library(lmerTest)
+ library(nlme)
+ library(psych)
 
 ```
 
 # Import Data
-```{r}
+```{r, warning=FALSE, message=FALSE}
 # read data
 df <- read_csv('mp_features.csv')
 df %>% head()
 
 df_pers <- read_csv('gps_study_questionnares.csv')
 df_pers %>% head()
-
 
 df_home <- read_csv('home2.csv')
 df_home %>% head()
@@ -52,10 +53,13 @@ df
 ## Select relevant variables 
 ```{r}
 
+# determine mobility variables 
+gps_vars <- c('raw_ent_value', 'num_cluster_value', 'per_at_home', 
+              'transition_time_value', 'dis_value', 'convex_hull_value')
+
 # picked raw entropy, too many missing in ent_value
-df <- df %>% select(uid, date, raw_ent_value, num_cluster_value,
-                    per_at_home, transition_time_value, dis_value,
-                    convex_hull_value, num_gps_records)
+df <- df %>% select(uid, date, raw_ent_value, all_of(gps_vars), num_gps_records)
+
 ```
 
 
@@ -81,14 +85,45 @@ df %>% group_by(uid) %>%
 
 ## Drop days and people with little data
 ```{r}
-df_clean <- df %>%
-  drop_na() %>%
-  filter(num_gps_records > 20) %>% 
+
+# remove missing data 
+df_clean_1 <- df %>% drop_na()
+
+# check days with little data points
+days_dropped <- NULL
+for(i in seq(0, 1000)){
+  dd_temp <- df_clean_1 %>%  filter(num_gps_records < i) %>% nrow()
+  days_dropped <- c(days_dropped, dd_temp)
+}
+
+plot(days_dropped/nrow(df_clean_1), xlab= "Threshold", ylab = 'Proportion dropped')
+
+# remove days with little data points
+df_clean_2 <- df_clean_1 %>% filter(num_gps_records > 20)
+
+  
+# outlier detection
+mahal_dist <- df_clean_2 %>% 
+  select(all_of(gps_vars)) %>%
+  mahalanobis(center = colMeans(.), cov = cov(.))
+
+cutoff = qchisq(0.999, 6)
+sum(mahal_dist > cutoff)
+
+df_clean_3 = df_clean_2[mahal_dist < cutoff,]
+
+# remove people with few days
+df_clean_4 <- df_clean_3 %>%
   group_by(uid) %>%
-  filter(n() > 5) %>%
+  filter(n() > 4) %>%
   ungroup()
 
-df_clean
+# check how much was dropped
+(nrow(df) - nrow(df_clean_4)) / nrow(df)
+(length(unique(df$uid)) - length(unique(df_clean_4$uid))) / length(unique(df$uid))
+
+df_clean <- df_clean_4
+
 ```
 
 ## Double check data density
@@ -111,18 +146,20 @@ df_clean %>% group_by(uid) %>%
 ## Fix time 
 ```{r}
 
+# create sequence of dates
 date_sequence <- seq.Date(min(as.Date(df$date)),
                      max(as.Date(df$date)), 1)
 
-df_dates = data_frame(date_sequence, 1:length(date_sequence)) 
+df_dates = tibble(date_sequence, 1:length(date_sequence)) 
 names(df_dates) <- c('date', 'day')
 
+# merge day index with gps data
 df_clean = df_clean %>% 
   merge(df_dates, by='date') %>% 
   arrange(uid) %>%
   as_tibble()
 
-df_clean
+df_clean %>% head()
 
 ```
 
@@ -130,16 +167,31 @@ df_clean
 # Calculate social distancing index
 ```{r}
 
-df_scaled <- df_clean %>% 
-  mutate_at(vars(-uid, -date, -num_gps_records, -day), scale) %>%
+# calculate index score
+df_scaled <- df_clean %>%
+  mutate_at(vars(all_of(gps_vars)), scale) %>%
   mutate(per_at_home= -per_at_home) %>%
   rowwise() %>%
   mutate(SDI = - mean(c(raw_ent_value:convex_hull_value)))
 
-df_scaled
+# calculate pca score
+pca_pc1 <- df_clean %>% 
+  select(all_of(gps_vars)) %>% 
+  pca(nfactors = 1) %>% 
+  .$score
+
+df_scaled <- df_scaled %>% cbind(-pca_pc1)
+
+# check correlation
+cor(df_scaled$SDI, df_scaled$PC1)
+
+# calculate cronbachs alpha
+df_scaled %>% 
+  select(all_of(gps_vars)) %>% 
+  psych::alpha() %>%
+  .$total
 
 ```
-
 
 
 # Explore and clean personality data
@@ -189,7 +241,6 @@ df_home_clean <- df_home %>%
   select(uid, state) %>% 
   filter(state %in% state.abb)
 
-
 ```
 
 # Merge data 
@@ -201,40 +252,150 @@ df_merged
 ```
 
 # Analysis 
-## Check correlations
+
+## Exploratory Analyses
+### Check correlations
 ```{r}
 df_merged %>% select(-uid, -date, -state) %>% cor()
 
 ```
 
-# MLMs
+### Check state data 
 
-## Prepare data
 ```{r}
+df_merged %>% group_by(state) %>% 
+  summarise(state_n = length(unique(uid))) %>% 
+  arrange(desc(state_n))
+
+
+df_merged %>% group_by(state) %>% 
+  summarise(state_n = length(unique(uid))) %>% 
+  .$state_n %>% 
+  hist()
+
+```
+
+
+
+## MLMs
+
+### Prepare data
+```{r}
+
+# partial out state differences
+# df_merged <- df_merged %>% 
+#  select(uid, day, o_pers, c_pers, e_pers, a_pers, n_pers, SDI, state) %>%
+#  group_by(state) %>%
+#  mutate(SDI = scale(SDI)) %>%
+#  ungroup()
+
 df_merged <- df_merged %>% 
-  select(uid, day, o_pers, c_pers, e_pers, a_pers, n_pers, SDI) %>% 
-  mutate_at(vars(-uid, -day, -SDI), scale)
+  select(uid, day, o_pers, c_pers, e_pers, a_pers, n_pers, SDI, state) %>% 
+  mutate_at(vars(-uid, -day, -SDI, -state), scale)
 ```
 
 
-## Opennness 
-```{r, warning = FALSE}
+### Create functions to run all models 
+```{r}
 
-# baseline
-a_baseline <- lmer(SDI ~ (1 | uid), data = df_merged, REML = F)
-summary(a_baseline)
+run_models <- function(pers, data){
+  
 
-# random intercept fixed slope
-a_random_intercept <- lmer(SDI ~ day + a_pers + (1 | uid), data = df_merged, REML = F)
-summary(a_random_intercept)
+  # subset data
+  data = data %>% 
+    select(uid, day, SDI, all_of(pers), state) %>% 
+    rename(pers = all_of(pers))
 
-# random intercept random slope
-a_random_slope <- lmer(SDI ~ day + a_pers + (day | uid), data = df_merged, REML = F)
-summary(a_random_slope)
+  # baseline
+  baseline <- lme(fixed = SDI ~ state, random = ~ 1 | uid, 
+                    data = data,
+                    correlation = corAR1())
 
-# cross level interaction
-a_interaction <- lmer(SDI ~ day*a_pers + (day | uid), data = df_merged, REML = F)
-summary(a_interaction)
+  # random intercept fixed slope
+  random_intercept <- lme(fixed = SDI ~ day + pers + state, random = ~ 1 | uid,
+                            data = data,
+                            correlation = corAR1())
+
+  # random intercept random slope
+  random_slope <- lme(fixed = SDI ~ day + pers + state, random = ~ day | uid, 
+                        data = data,
+                        correlation = corAR1())
+
+  # cross level interaction
+  interaction <- lme(fixed = SDI ~ day * pers + state, random = ~ day | uid, 
+                       data = data,
+                       correlation = corAR1())
+  
+  # create list with results
+  results <- list('baseline' = baseline, 
+                  "random_intercept" = random_intercept, 
+                  "random_slope" = random_slope,
+                  "interaction" = interaction)
+  
+  return(results)
+  
+}
+
+
+extract_results <- function(models) {
+  
+  models_summary <- models %>% 
+  map(summary) %>% 
+  map("tTable") %>% 
+  map(as.data.frame) %>% 
+  map(round, 5) %>% 
+  map(~ .[str_detect(rownames(.), 'Inter|day|pers'),])
+  
+  return(models_summary)
+}
 
 ```
 
+### Openness
+```{r}
+
+models_o <- run_models(pers = 'o_pers', data = df_merged)
+
+models_o %>% extract_results() %>% print()
+
+
+```
+
+### Conscientiousness
+```{r}
+
+models_c <- run_models(pers = 'c_pers', data = df_merged)
+
+models_c %>% extract_results() %>% print()
+
+```
+
+### Extraversion
+
+```{r}
+
+models_e <- run_models(pers = 'e_pers', data = df_merged)
+
+models_e %>% extract_results() %>% print()
+
+```
+
+
+### Agreeableness
+```{r}
+
+models_a <- run_models(pers = 'a_pers', data = df_merged)
+
+models_a %>% extract_results() %>% print()
+
+```
+
+
+### Neuroticism 
+```{r}
+
+models_n <- run_models(pers = 'n_pers', data = df_merged)
+
+models_n %>% extract_results() %>% print()
+
+```
