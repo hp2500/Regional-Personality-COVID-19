@@ -787,9 +787,16 @@ df_merged </code></pre>
 <h2>MLMs</h2>
 <div id="prepare-data" class="section level3">
 <h3>Prepare data</h3>
-<pre class="r"><code>df_merged &lt;- df_merged %&gt;% 
-  select(uid, day, o_pers, c_pers, e_pers, a_pers, n_pers, SDI) %&gt;% 
-  mutate_at(vars(-uid, -day, -SDI), scale)</code></pre>
+<pre class="r"><code># partial out state differences
+# df_merged &lt;- df_merged %&gt;% 
+#  select(uid, day, o_pers, c_pers, e_pers, a_pers, n_pers, SDI, state) %&gt;%
+#  group_by(state) %&gt;%
+#  mutate(SDI = scale(SDI)) %&gt;%
+#  ungroup()
+
+df_merged &lt;- df_merged %&gt;% 
+  select(uid, day, o_pers, c_pers, e_pers, a_pers, n_pers, SDI, state) %&gt;% 
+  mutate_at(vars(-uid, -day, -SDI, -state), scale)</code></pre>
 </div>
 <div id="create-functions-to-run-all-models" class="section level3">
 <h3>Create functions to run all models</h3>
@@ -798,26 +805,26 @@ df_merged </code></pre>
 
   # subset data
   data = data %&gt;% 
-    select(uid, day, SDI, all_of(pers)) %&gt;% 
+    select(uid, day, SDI, all_of(pers), state) %&gt;% 
     rename(pers = all_of(pers))
 
   # baseline
-  baseline &lt;- lme(fixed = SDI ~ 1, random = ~ 1 | uid, 
+  baseline &lt;- lme(fixed = SDI ~ state, random = ~ 1 | uid, 
                     data = data,
                     correlation = corAR1())
 
   # random intercept fixed slope
-  random_intercept &lt;- lme(fixed = SDI ~ day + pers, random = ~ 1 | uid,
+  random_intercept &lt;- lme(fixed = SDI ~ day + pers + state, random = ~ 1 | uid,
                             data = data,
                             correlation = corAR1())
 
   # random intercept random slope
-  random_slope &lt;- lme(fixed = SDI ~ day + pers, random = ~ day | uid, 
+  random_slope &lt;- lme(fixed = SDI ~ day + pers + state, random = ~ day | uid, 
                         data = data,
                         correlation = corAR1())
 
   # cross level interaction
-  interaction &lt;- lme(fixed = SDI ~ day * pers, random = ~ day | uid, 
+  interaction &lt;- lme(fixed = SDI ~ day * pers + state, random = ~ day | uid, 
                        data = data,
                        correlation = corAR1())
   
@@ -838,7 +845,8 @@ extract_results &lt;- function(models) {
   map(summary) %&gt;% 
   map(&quot;tTable&quot;) %&gt;% 
   map(as.data.frame) %&gt;% 
-  map(round, 5)
+  map(round, 5) %&gt;% 
+  map(~ .[str_detect(rownames(.), &#39;Inter|day|pers&#39;),])
   
   return(models_summary)
 }</code></pre>
@@ -850,26 +858,26 @@ extract_results &lt;- function(models) {
 models_o %&gt;% extract_results() %&gt;% print()</code></pre>
 <pre><code>## $baseline
 ##               Value Std.Error   DF t-value p-value
-## (Intercept) 0.01337   0.03459 3458 0.38651 0.69914
+## (Intercept) 0.13916   0.32453 3458 0.42881 0.66809
 ## 
 ## $random_intercept
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47167   0.05398 3457 -8.73713 0.00000
-## day          0.03152   0.00280 3457 11.25051 0.00000
-## pers         0.03285   0.03311  354  0.99224 0.32176
+## (Intercept) -0.25394   0.30971 3457 -0.81994  0.4123
+## day          0.03155   0.00287 3457 10.97837  0.0000
+## pers         0.01057   0.03585  312  0.29486  0.7683
 ## 
 ## $random_slope
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47215   0.05417 3457 -8.71564 0.00000
-## day          0.03175   0.00299 3457 10.60771 0.00000
-## pers         0.02884   0.03291  354  0.87616 0.38154
+## (Intercept) -0.26963   0.30662 3457 -0.87937 0.37926
+## day          0.03174   0.00307 3457 10.35418 0.00000
+## pers         0.00563   0.03569  312  0.15779 0.87472
 ## 
 ## $interaction
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47200   0.05413 3456 -8.71996 0.00000
-## day          0.03172   0.00299 3456 10.61408 0.00000
-## pers        -0.01941   0.05582  354 -0.34774 0.72824
-## day:pers     0.00328   0.00306 3456  1.07140 0.28406</code></pre>
+## (Intercept) -0.27157   0.30696 3456 -0.88469 0.37639
+## day          0.03173   0.00306 3456 10.37791 0.00000
+## pers        -0.05681   0.05796  312 -0.98011 0.32779
+## day:pers     0.00427   0.00311 3456  1.37117 0.17041</code></pre>
 </div>
 <div id="conscientiousness" class="section level3">
 <h3>Conscientiousness</h3>
@@ -878,26 +886,26 @@ models_o %&gt;% extract_results() %&gt;% print()</code></pre>
 models_c %&gt;% extract_results() %&gt;% print()</code></pre>
 <pre><code>## $baseline
 ##               Value Std.Error   DF t-value p-value
-## (Intercept) 0.01337   0.03459 3458 0.38651 0.69914
+## (Intercept) 0.13916   0.32453 3458 0.42881 0.66809
 ## 
 ## $random_intercept
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47300   0.05395 3457 -8.76740 0.00000
-## day          0.03164   0.00280 3457 11.29554 0.00000
-## pers        -0.04272   0.03252  354 -1.31349 0.18987
+## (Intercept) -0.26747   0.30855 3457 -0.86685 0.38608
+## day          0.03160   0.00287 3457 10.99736 0.00000
+## pers        -0.02652   0.03384  312 -0.78352 0.43392
 ## 
 ## $random_slope
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47364   0.05411 3457 -8.75346 0.00000
-## day          0.03188   0.00299 3457 10.64586 0.00000
-## pers        -0.04262   0.03242  354 -1.31468 0.18947
+## (Intercept) -0.28131   0.30547 3457 -0.92091 0.35716
+## day          0.03181   0.00307 3457 10.36822 0.00000
+## pers        -0.02836   0.03376  312 -0.84007 0.40151
 ## 
 ## $interaction
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47366   0.05418 3456 -8.74222 0.00000
-## day          0.03188   0.00300 3456 10.63102 0.00000
-## pers        -0.04262   0.05431  354 -0.78465 0.43318
-## day:pers     0.00000   0.00300 3456 -0.00016 0.99987</code></pre>
+## (Intercept) -0.28215   0.30573 3456 -0.92288 0.35613
+## day          0.03182   0.00307 3456 10.35543 0.00000
+## pers        -0.03418   0.05561  312 -0.61459 0.53927
+## day:pers     0.00040   0.00308 3456  0.13123 0.89560</code></pre>
 </div>
 <div id="extraversion" class="section level3">
 <h3>Extraversion</h3>
@@ -906,26 +914,26 @@ models_c %&gt;% extract_results() %&gt;% print()</code></pre>
 models_e %&gt;% extract_results() %&gt;% print()</code></pre>
 <pre><code>## $baseline
 ##               Value Std.Error   DF t-value p-value
-## (Intercept) 0.01337   0.03459 3458 0.38651 0.69914
+## (Intercept) 0.13916   0.32453 3458 0.42881 0.66809
 ## 
 ## $random_intercept
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47155   0.05398 3457 -8.73525 0.00000
-## day          0.03153   0.00280 3457 11.25547 0.00000
-## pers        -0.03128   0.03229  354 -0.96855 0.33343
+## (Intercept) -0.29148   0.31073 3457 -0.93805 0.34829
+## day          0.03160   0.00287 3457 10.99704 0.00000
+## pers        -0.02832   0.03500  312 -0.80930 0.41896
 ## 
 ## $random_slope
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47215   0.05402 3457 -8.74036 0.00000
-## day          0.03177   0.00300 3457 10.60411 0.00000
-## pers        -0.03516   0.03213  354 -1.09427 0.27458
+## (Intercept) -0.30542   0.30767 3457 -0.99266 0.32094
+## day          0.03180   0.00307 3457 10.37003 0.00000
+## pers        -0.02919   0.03470  312 -0.84120 0.40088
 ## 
 ## $interaction
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47250   0.05404 3456 -8.74363 0.00000
-## day          0.03180   0.00300 3456 10.61241 0.00000
-## pers        -0.07319   0.05320  354 -1.37565 0.16980
-## day:pers     0.00268   0.00299 3456  0.89736 0.36959</code></pre>
+## (Intercept) -0.31155   0.30800 3456 -1.01153 0.31183
+## day          0.03181   0.00307 3456 10.36794 0.00000
+## pers        -0.06155   0.05510  312 -1.11707 0.26482
+## day:pers     0.00232   0.00307 3456  0.75619 0.44959</code></pre>
 </div>
 <div id="agreeableness" class="section level3">
 <h3>Agreeableness</h3>
@@ -934,26 +942,26 @@ models_e %&gt;% extract_results() %&gt;% print()</code></pre>
 models_a %&gt;% extract_results() %&gt;% print()</code></pre>
 <pre><code>## $baseline
 ##               Value Std.Error   DF t-value p-value
-## (Intercept) 0.01337   0.03459 3458 0.38651 0.69914
+## (Intercept) 0.13916   0.32453 3458 0.42881 0.66809
 ## 
 ## $random_intercept
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47675   0.05390 3457 -8.84550 0.00000
-## day          0.03184   0.00280 3457 11.37069 0.00000
-## pers        -0.06684   0.03223  354 -2.07368 0.03883
+## (Intercept) -0.33412   0.31087 3457 -1.07478 0.28255
+## day          0.03176   0.00287 3457 11.05612 0.00000
+## pers        -0.05639   0.03447  312 -1.63569 0.10291
 ## 
 ## $random_slope
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47744   0.05387 3457 -8.86197  0.0000
-## day          0.03207   0.00299 3457 10.72595  0.0000
-## pers        -0.06801   0.03222  354 -2.11064  0.0355
+## (Intercept) -0.35223   0.30717 3457 -1.14669 0.25159
+## day          0.03197   0.00306 3457 10.43777 0.00000
+## pers        -0.06064   0.03463  312 -1.75117 0.08090
 ## 
 ## $interaction
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47806   0.05391 3456 -8.86711 0.00000
-## day          0.03205   0.00299 3456 10.70875 0.00000
-## pers        -0.09462   0.05618  354 -1.68422 0.09302
-## day:pers     0.00175   0.00303 3456  0.57831 0.56309</code></pre>
+## (Intercept) -0.38329   0.30832 3456 -1.24314 0.21390
+## day          0.03191   0.00306 3456 10.41380 0.00000
+## pers        -0.10761   0.05862  312 -1.83561 0.06737
+## day:pers     0.00306   0.00309 3456  0.99274 0.32091</code></pre>
 </div>
 <div id="neuroticism" class="section level3">
 <h3>Neuroticism</h3>
@@ -962,26 +970,26 @@ models_a %&gt;% extract_results() %&gt;% print()</code></pre>
 models_n %&gt;% extract_results() %&gt;% print()</code></pre>
 <pre><code>## $baseline
 ##               Value Std.Error   DF t-value p-value
-## (Intercept) 0.01337   0.03459 3458 0.38651 0.69914
+## (Intercept) 0.13916   0.32453 3458 0.42881 0.66809
 ## 
 ## $random_intercept
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.46998   0.05409 3457 -8.68956 0.00000
-## day          0.03144   0.00281 3457 11.19937 0.00000
-## pers        -0.01893   0.03239  354 -0.58443 0.55931
+## (Intercept) -0.25119   0.30955 3457 -0.81146 0.41716
+## day          0.03145   0.00288 3457 10.91643 0.00000
+## pers        -0.01407   0.03436  312 -0.40940 0.68253
 ## 
 ## $random_slope
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.46980   0.05434 3457 -8.64603 0.00000
-## day          0.03163   0.00301 3457 10.51390 0.00000
-## pers        -0.02558   0.03229  354 -0.79207 0.42885
+## (Intercept) -0.25979   0.30654 3457 -0.84748 0.39679
+## day          0.03160   0.00308 3457 10.25699 0.00000
+## pers        -0.02115   0.03421  312 -0.61827 0.53685
 ## 
 ## $interaction
 ##                Value Std.Error   DF  t-value p-value
-## (Intercept) -0.47060   0.05443 3456 -8.64549 0.00000
-## day          0.03165   0.00301 3456 10.50522 0.00000
-## pers        -0.01265   0.05591  354 -0.22628 0.82111
-## day:pers    -0.00087   0.00305 3456 -0.28479 0.77582</code></pre>
+## (Intercept) -0.26055   0.30747 3456 -0.84739 0.39684
+## day          0.03160   0.00309 3456 10.24085 0.00000
+## pers        -0.02099   0.05718  312 -0.36709 0.71380
+## day:pers    -0.00002   0.00312 3456 -0.00599 0.99522</code></pre>
 </div>
 </div>
 </div>
