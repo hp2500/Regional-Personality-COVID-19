@@ -1,0 +1,365 @@
+---
+title: "COVID-19 US Counties"
+author: "Heinrich Peters"
+date: "4/15/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# MAC
+ knitr::opts_knit$set(root.dir = '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data')
+ 
+ library(tidyverse)
+ library(lmerTest)
+ library(nlme)
+ library(psych)
+ library(ggplot2)
+```
+
+
+# Prepare county level data 
+
+### Read and format data
+```{r, warning=FALSE, message=FALSE}
+
+df_us_covid <- read_csv('timeseries_usa_county_march1_april_09.csv')
+df_us_covid <- df_us_covid %>% 
+  filter(time <=31) %>% 
+  arrange(countyfips) %>%
+  mutate(stabil = -stabil) %>%
+  rename(county_fips = countyfips,
+         pers_o = open, 
+         pers_c = sci,
+         pers_e = extra,
+         pers_a = agree,
+         pers_n = stabil)
+
+df_us_covid %>% head()
+
+df_us_socdisc <- read_csv('0409_sds-full-county.csv')
+
+df_us_socdisc %>% head()
+
+
+```
+
+### Format time variable
+```{r}
+
+# create sequence of dates
+date_sequence <- seq.Date(as.Date('2020-03-01'),
+                          as.Date('2020-03-31'), 1)
+date_sequence
+                     
+
+# create data frame with time sequence
+df_dates = tibble(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+# merge day index with gps data
+df_us_socdisc = df_us_socdisc %>% 
+  merge(df_dates, by='date') %>% 
+  arrange(county_fips) %>%
+  as_tibble()
+
+```
+
+### Explore COVID data
+```{r}
+df_us_covid %>% group_by(county_fips) %>% summarise(mark = mean(mark)) %>% select(mark) %>% map(hist, breaks=300)
+df_us_covid$mark %>% summary()
+
+df_us_covid %>% .['rate_day'] %>% map(hist, breaks = 100)
+df_us_covid %>% .['rate_day'] %>% summary()
+
+
+```
+
+### Explore social distancing data
+```{r}
+df_us_socdisc %>% .$daily_distance_diff %>% hist()
+df_us_socdisc %>% .$daily_visitation_diff %>% hist()
+df_us_socdisc
+```
+
+
+## Merge data
+```{r}
+df_us <- plyr::join_all(list(df_us_covid, df_us_socdisc), 
+                  by = c('county_fips', 'time'), 
+                  type = 'inner') %>% 
+  arrange(county_fips, time)
+
+df_us %>% head()
+
+```
+
+
+```{r}
+
+pers <- c('pers_o', 'pers_c', 'pers_e', 'pers_a', 'pers_n')
+
+for (i in pers){
+  
+gg <- df_us %>% mutate(dist_tail = cut(.[[i]], 
+                                       breaks = c(-Inf, quantile(.[[i]], 0.01), quantile(.[[i]], 0.99), Inf),
+                                       labels = c('lower tail', 'center', 'upper tail'))) %>% 
+  filter(dist_tail != 'center') %>%
+  ggplot(aes(x=time, y=daily_distance_diff)) + 
+  geom_point(aes(col=county_name, size=mark)) + 
+  geom_smooth(method="loess", se=T) + 
+  facet_wrap(~dist_tail) + 
+  theme(legend.position="none") +
+  ggtitle(i)
+
+print(gg)
+}
+
+
+
+
+```
+
+
+```{r}
+
+pers <- c('pers_o', 'pers_c', 'pers_e', 'pers_a', 'pers_n')
+
+for (i in pers){
+
+  
+gg <- df_us %>% mutate(dist_tail = cut(.[[i]], 
+                                       breaks = c(-Inf, quantile(.[[i]], 0.01), quantile(.[[i]], 0.99), Inf),
+                                       labels = c('lower tail', 'center', 'upper tail'))) %>% 
+  filter(dist_tail != 'center') %>%
+  ggplot(aes(x=time, y=rate_day)) + 
+  geom_point(aes(col=county_name, size=mark)) + 
+  geom_smooth(method="loess", se=T) + 
+  facet_wrap(~dist_tail) + 
+  theme(legend.position="none") +
+  ggtitle(i)
+
+print(gg)
+}
+
+```
+
+
+
+### Rescale Data
+```{r}
+df_us <- df_us %>% select(county_fips, date, time, pers_o, pers_c, pers_e, pers_e, pers_a, pers_n,
+                 daily_distance_diff, rate_day) %>%
+  mutate_at(vars(-county_fips, -date, -time), scale)
+
+df_us %>% head()
+```
+
+
+# Model building
+
+## Prepare functions
+
+```{r}
+
+# function calculates all relevant models
+run_models <- function(y, lvl1_x, lvl2_x, lvl2_id, data){
+
+  # subset data
+  data = data %>% 
+    dplyr::select(all_of(y), all_of(lvl1_x), all_of(lvl2_x), all_of(lvl2_id))
+  data = data %>% 
+    rename(y = all_of(y),
+           lvl1_x = all_of(lvl1_x),
+           lvl2_x = all_of(lvl2_x),
+           lvl2_id = all_of(lvl2_id)
+           )
+  
+  # configure optimization procedure
+  ctrl_config <- lmeControl(opt = 'optim')
+
+  # baseline
+  baseline <- lme(fixed = y ~ 1, random = ~ 1 | lvl2_id, 
+                    data = data,
+                    correlation = corAR1(),
+                  control = ctrl_config)
+
+  # random intercept fixed slope
+  random_intercept <- lme(fixed = y ~ lvl1_x + lvl2_x , random = ~ 1 | lvl2_id,
+                            data = data,
+                            correlation = corAR1(),
+                  control = ctrl_config)
+
+  # random intercept random slope
+  random_slope <- lme(fixed = y ~ lvl1_x + lvl2_x, random = ~ lvl1_x | lvl2_id, 
+                        data = data,
+                        correlation = corAR1(),
+                  control = ctrl_config)
+
+  # cross level interaction
+  interaction <- lme(fixed = y ~ lvl1_x * lvl2_x, random = ~ lvl1_x | lvl2_id, 
+                       data = data,
+                       correlation = corAR1(),
+                  control = ctrl_config)
+  
+  # create list with results
+  results <- list('baseline' = baseline, 
+                  "random_intercept" = random_intercept, 
+                  "random_slope" = random_slope,
+                  "interaction" = interaction)
+  
+  return(results)
+        
+}
+
+
+# extracts table with coefficients and tests statistics
+extract_results <- function(models) {
+  
+  models_summary <- models %>% 
+  map(summary) %>% 
+  map("tTable") %>% 
+  map(as.data.frame) %>% 
+  map(round, 5) %>% 
+  map(~ .[str_detect(rownames(.), 'Inter|lvl'),])
+  
+  return(models_summary)
+}
+```
+
+
+## Predict prevalence
+### prevalence ~ openness
+```{r}
+
+models_o_covid <-run_models(y = 'rate_day', 
+                         lvl1_x = 'time', 
+                         lvl2_x = 'pers_o', 
+                         lvl2_id = 'county_fips', 
+                         data = df_us)
+
+extract_results(models_o_covid)
+
+```
+
+### prevalence ~ conscientiousness
+```{r}
+
+models_c_covid <-run_models(y = 'rate_day', 
+                         lvl1_x = 'time', 
+                         lvl2_x = 'pers_c', 
+                         lvl2_id = 'county_fips', 
+                         data = df_us)
+
+extract_results(models_c_covid)
+
+```
+
+### prevalence ~ extraversion
+```{r}
+
+models_e_covid <-run_models(y = 'rate_day', 
+                         lvl1_x = 'time', 
+                         lvl2_x = 'pers_e', 
+                         lvl2_id = 'county_fips', 
+                         data = df_us)
+
+extract_results(models_e_covid)
+
+```
+
+### prevalence ~ agreeableness
+```{r}
+
+models_a_covid <-run_models(y = 'rate_day', 
+                         lvl1_x = 'time', 
+                         lvl2_x = 'pers_a', 
+                         lvl2_id = 'county_fips', 
+                         data = df_us)
+
+extract_results(models_a_covid)
+
+```
+
+### prevalence ~ neuroticism
+```{r}
+
+models_n_covid <-run_models(y = 'rate_day', 
+                         lvl1_x = 'time', 
+                         lvl2_x = 'pers_n', 
+                         lvl2_id = 'county_fips', 
+                         data = df_us)
+
+extract_results(models_n_covid)
+
+```
+
+
+
+## Predict social distancing
+### social distancing ~ openness
+```{r}
+
+models_o_sd <-run_models(y = 'daily_distance_diff', 
+                         lvl1_x = 'time', 
+                         lvl2_x = 'pers_o', 
+                         lvl2_id = 'county_fips', 
+                         data = df_us)
+
+extract_results(models_o_sd)
+
+```
+
+### social distancing ~ conscientiousness
+```{r}
+
+models_c_sd <-run_models(y = 'daily_distance_diff', 
+                         lvl1_x = 'time', 
+                         lvl2_x = 'pers_c', 
+                         lvl2_id = 'county_fips', 
+                         data = df_us)
+
+extract_results(models_c_sd)
+
+```
+
+### social distancing ~ extraversion
+```{r}
+
+models_e_sd <-run_models(y = 'daily_distance_diff', 
+                         lvl1_x = 'time', 
+                         lvl2_x = 'pers_e', 
+                         lvl2_id = 'county_fips', 
+                         data = df_us)
+
+extract_results(models_e_sd)
+
+```
+
+### social distancing ~ agreeableness
+```{r}
+
+models_a_sd <-run_models(y = 'daily_distance_diff', 
+                         lvl1_x = 'time', 
+                         lvl2_x = 'pers_a', 
+                         lvl2_id = 'county_fips', 
+                         data = df_us)
+
+extract_results(models_a_sd)
+
+```
+
+### social distancing ~ neuroticism
+```{r}
+
+models_n_sd <-run_models(y = 'daily_distance_diff', 
+                         lvl1_x = 'time', 
+                         lvl2_x = 'pers_n', 
+                         lvl2_id = 'county_fips', 
+                         data = df_us)
+
+extract_results(models_n_sd)
+
+```

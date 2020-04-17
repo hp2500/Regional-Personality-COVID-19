@@ -121,7 +121,7 @@ df_clean_3 = df_clean_2[mahal_dist < cutoff,]
 # remove people with few days
 df_clean_4 <- df_clean_3 %>%
   group_by(uid) %>%
-  filter(n() > 4) %>%
+  filter(n() >=10) %>%
   ungroup()
 ```
 
@@ -325,30 +325,52 @@ df_merged <- df_merged %>%
 ```{r}
 
 # function calculates all relevant models
-run_models <- function(pers, data){
+run_models <- function(pers, sdi = 'SDI', data){
 
   # subset data
   data = data %>% 
-    select(uid, day, SDI, all_of(pers), state) %>% 
-    rename(pers = all_of(pers))
+    select(uid, day, sdi, all_of(pers), state) %>% 
+    rename(pers = all_of(pers),
+           sdi = all_of(sdi)
+           )
 
-  # baseline
-  baseline <- lme(fixed = SDI ~ state, random = ~ 1 | uid, 
+    # baseline
+  baseline <- lme(fixed = sdi ~ 1, random = ~ 1 | uid, 
                     data = data,
                     correlation = corAR1())
 
   # random intercept fixed slope
-  random_intercept <- lme(fixed = SDI ~ day + pers + state, random = ~ 1 | uid,
+  random_intercept <- lme(fixed = sdi ~ day + pers , random = ~ 1 | uid,
                             data = data,
                             correlation = corAR1())
 
   # random intercept random slope
-  random_slope <- lme(fixed = SDI ~ day + pers + state, random = ~ day | uid, 
+  random_slope <- lme(fixed = sdi ~ day + pers, random = ~ day | uid, 
                         data = data,
                         correlation = corAR1())
 
   # cross level interaction
-  interaction <- lme(fixed = SDI ~ day * pers + state, random = ~ day | uid, 
+  interaction <- lme(fixed = sdi ~ day * pers, random = ~ day | uid, 
+                       data = data,
+                       correlation = corAR1())
+
+  # baseline
+  baseline_sfe <- lme(fixed = sdi ~ state, random = ~ 1 | uid, 
+                    data = data,
+                    correlation = corAR1())
+
+  # random intercept fixed slope
+  random_intercept_sfe <- lme(fixed = sdi ~ day + pers + state, random = ~ 1 | uid,
+                            data = data,
+                            correlation = corAR1())
+
+  # random intercept random slope
+  random_slope_sfe <- lme(fixed = sdi ~ day + pers + state, random = ~ day | uid, 
+                        data = data,
+                        correlation = corAR1())
+
+  # cross level interaction
+  interaction_sfe <- lme(fixed = sdi ~ day * pers + state, random = ~ day | uid, 
                        data = data,
                        correlation = corAR1())
   
@@ -356,10 +378,14 @@ run_models <- function(pers, data){
   results <- list('baseline' = baseline, 
                   "random_intercept" = random_intercept, 
                   "random_slope" = random_slope,
-                  "interaction" = interaction)
+                  "interaction" = interaction,
+                  "baseline_state_fixed" = baseline_sfe, 
+                  "random_intercept_state_fixed" = random_intercept_sfe, 
+                  "random_slope_state_fixed" = random_slope_sfe,
+                  "interaction_state_fixed" = interaction_sfe)
   
   return(results)
-  
+        
 }
 
 
@@ -381,8 +407,7 @@ extract_results <- function(models) {
 ### Openness
 ```{r}
 
-models_o <- run_models(pers = 'o_pers', data = df_merged)
-
+models_o <- run_models(pers = 'o_pers', sdi = 'SDI', data = df_merged)
 models_o %>% extract_results() %>% print()
 
 
@@ -391,8 +416,7 @@ models_o %>% extract_results() %>% print()
 ### Conscientiousness
 ```{r}
 
-models_c <- run_models(pers = 'c_pers', data = df_merged)
-
+models_c <- run_models(pers = 'c_pers', sdi = 'SDI', data = df_merged)
 models_c %>% extract_results() %>% print()
 
 ```
@@ -401,8 +425,7 @@ models_c %>% extract_results() %>% print()
 
 ```{r}
 
-models_e <- run_models(pers = 'e_pers', data = df_merged)
-
+models_e <- run_models(pers = 'e_pers', sdi = 'SDI', data = df_merged)
 models_e %>% extract_results() %>% print()
 
 ```
@@ -411,8 +434,7 @@ models_e %>% extract_results() %>% print()
 ### Agreeableness
 ```{r}
 
-models_a <- run_models(pers = 'a_pers', data = df_merged)
-
+models_a <- run_models(pers = 'a_pers', sdi = 'SDI', data = df_merged)
 models_a %>% extract_results() %>% print()
 
 ```
@@ -421,8 +443,8 @@ models_a %>% extract_results() %>% print()
 ### Neuroticism 
 ```{r}
 
-models_n <- run_models(pers = 'n_pers', data = df_merged)
-
+models_n <- run_models(pers = 'n_pers', sdi = 'SDI', data = df_merged)
 models_n %>% extract_results() %>% print()
 
 ```
+
