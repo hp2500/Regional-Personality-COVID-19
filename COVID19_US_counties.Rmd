@@ -66,25 +66,6 @@ df_us_socdisc = df_us_socdisc %>%
 
 ```
 
-### Explore COVID data
-```{r}
-df_us_covid %>% group_by(county_fips) %>% summarise(mark = mean(mark)) %>% select(mark) %>% map(hist, breaks=300)
-df_us_covid$mark %>% summary()
-
-df_us_covid %>% .['rate_day'] %>% map(hist, breaks = 100)
-df_us_covid %>% .['rate_day'] %>% summary()
-
-
-```
-
-### Explore social distancing data
-```{r}
-df_us_socdisc %>% .$daily_distance_diff %>% hist()
-df_us_socdisc %>% .$daily_visitation_diff %>% hist()
-df_us_socdisc
-```
-
-
 ## Merge data
 ```{r}
 df_us <- plyr::join_all(list(df_us_covid, df_us_socdisc), 
@@ -96,13 +77,83 @@ df_us %>% head()
 
 ```
 
+## Explore data
+### Plot distributions
+```{r}
+
+# distribution of observations per county
+df_us %>% group_by(county_fips) %>% 
+  summarise(mark = mean(mark)) %>% 
+  ggplot(aes(x=mark)) + 
+  geom_histogram(color="black", fill="white", binwidth = 300) +
+  ggtitle('Distribution of observations per county')
+
+  
+# distributions of mean corona rates per county
+df_us %>% group_by(county_fips) %>% 
+  summarise(rate_day = mean(rate_day)) %>%
+  ggplot(aes(x=rate_day)) + 
+  geom_histogram(color="black", fill="white", binwidth = 0.01) +
+  ggtitle('Distribution of mean corona rates by county')
+
+  
+# distribution of mean sd distance measue
+df_us %>% group_by(county_fips) %>% 
+  summarise(daily_distance_diff = mean(daily_distance_diff)) %>%
+  ggplot(aes(x=daily_distance_diff)) + 
+  geom_histogram(color="black", fill="white") +
+ ggtitle('Distribution of mean sd distance measure by county')
+
+
+# distribution of mean sd visit measue
+df_us %>% group_by(county_fips) %>% 
+  summarise(daily_visitation_diff = mean(daily_visitation_diff)) %>%
+  ggplot(aes(x=daily_visitation_diff)) + 
+  geom_histogram(color="black", fill="white") +
+  ggtitle('Distribution of mean sd visit measure by county')
+
+
+```
+
 
 ```{r}
+
+df_us %>% group_by(county_fips) %>% 
+  slice(n()) %>% 
+  group_by(state) %>% 
+  summarise(county_n = n()) %>% 
+  ggplot(aes(x=state, y=county_n)) +
+  geom_bar(stat="identity") + 
+  ggtitle('Counties per state') +
+  coord_flip()
+
+
+df_us %>% 
+  group_by(state) %>% 
+  summarise(individual_n = sum(mark)) %>% 
+  ggplot(aes(x=state, y=individual_n)) +
+  geom_bar(stat="identity") +
+  ggtitle('Individuals per state') +
+  coord_flip()  
+
+
+```
+
+### Plot social distancing by distance travelled
+```{r}
+
+df_us %>% sample_n(5000) %>%
+  ggplot(aes(x=time, y=daily_distance_diff)) + 
+  geom_point(aes(col=county_name, size=mark)) + 
+  geom_smooth(method="loess", se=T) + 
+  theme(legend.position="none") +
+  ggtitle("Overall social distancing (distance travelled) over time")
+
 
 pers <- c('pers_o', 'pers_c', 'pers_e', 'pers_a', 'pers_n')
 
 for (i in pers){
-  
+
 gg <- df_us %>% mutate(dist_tail = cut(.[[i]], 
                                        breaks = c(-Inf, quantile(.[[i]], 0.01), quantile(.[[i]], 0.99), Inf),
                                        labels = c('lower tail', 'center', 'upper tail'))) %>% 
@@ -117,13 +168,51 @@ gg <- df_us %>% mutate(dist_tail = cut(.[[i]],
 print(gg)
 }
 
+```
+### Plot social distancing by place visits
+```{r}
+
+df_us %>% sample_n(5000) %>%
+  ggplot(aes(x=time, y=daily_visitation_diff)) + 
+  geom_point(aes(col=county_name, size=mark)) + 
+  geom_smooth(method="loess", se=T) + 
+  theme(legend.position="none") +
+  ggtitle("Overall social distancing (places visited) over time")
 
 
+
+pers <- c('pers_o', 'pers_c', 'pers_e', 'pers_a', 'pers_n')
+
+for (i in pers){
+
+gg <- df_us %>% mutate(dist_tail = cut(.[[i]], 
+                                       breaks = c(-Inf, quantile(.[[i]], 0.01), quantile(.[[i]], 0.99), Inf),
+                                       labels = c('lower tail', 'center', 'upper tail'))) %>% 
+  filter(dist_tail != 'center') %>%
+  ggplot(aes(x=time, y=daily_visitation_diff)) + 
+  geom_point(aes(col=county_name, size=mark)) + 
+  geom_smooth(method="loess", se=T) + 
+  facet_wrap(~dist_tail) + 
+  theme(legend.position="none") +
+  ggtitle(i)
+
+print(gg)
+}
 
 ```
 
 
+### Plot prevalence over time
 ```{r}
+
+df_us %>% sample_n(5000) %>%
+  ggplot(aes(x=time, y=rate_day)) + 
+  geom_point(aes(col=county_name, size=mark)) + 
+  geom_smooth(method="loess", se=T) + 
+  theme(legend.position="none") +
+  ggtitle("Overall prevalence over time")
+
+
 
 pers <- c('pers_o', 'pers_c', 'pers_e', 'pers_a', 'pers_n')
 
@@ -147,8 +236,26 @@ print(gg)
 ```
 
 
+### Correlations 
 
-### Rescale Data
+```{r}
+
+df_us %>% select(county_fips, population, acad_share, medianage, 
+                 creative_share, rep2012, male_share, medianinc, 
+                 lifeexp_2010_14, black_share, foreign_share, 
+                 married_share, patents, popdens, viocrime, 
+                 pers_o, pers_a, pers_e, pers_c, pers_n, mark, 
+                 rate_day, daily_distance_diff, daily_visitation_diff, 
+                 encounters_rate) %>% 
+  group_by(county_fips) %>%
+  summarize_if(is.numeric, mean) %>% 
+  cor(use='pairwise.complete.obs')
+  
+```
+
+
+
+## Rescale Data
 ```{r}
 df_us <- df_us %>% select(county_fips, date, time, pers_o, pers_c, pers_e, pers_e, pers_a, pers_n,
                  daily_distance_diff, rate_day) %>%
