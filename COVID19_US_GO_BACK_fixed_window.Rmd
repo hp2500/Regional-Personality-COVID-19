@@ -1,0 +1,627 @@
+---
+title: "COVID-19 US"
+author: "Heinrich Peters"
+date: "4/15/2020"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# MAC
+ knitr::opts_knit$set(root.dir = '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data/US')
+
+library(lmerTest)
+library(nlme)
+library(psych)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(party)
+library(doParallel)
+library(changepoint)
+library(survival)
+library(survminer)
+library(censReg)
+ 
+source('/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Code/COVID19_functions.R')
+```
+
+
+# Prepare county level data 
+
+### Read and format personality data 
+```{r, warning=FALSE, message=FALSE}
+
+df_us_pers <- read_csv('timeseries_usa_county_march1_april_09.csv')
+
+df_us_pers <- df_us_pers %>% select(countyfips, open, sci, extra, agree, stabil) %>% 
+  mutate(stabil = 6-stabil) %>%
+  dplyr::rename(county_fips = countyfips,
+         pers_o = open, 
+         pers_c = sci,
+         pers_e = extra,
+         pers_a = agree,
+         pers_n = stabil) %>% 
+  distinct() %>%
+  mutate(county_fips = as.character(county_fips))
+
+```
+
+### Read and format prevalence data 
+```{r, warning=FALSE, message=FALSE}
+
+df_us_prev <- read_csv('USA_timeseries_prep_2005.csv')
+
+df_us_prev <- df_us_prev %>% 
+  select(fips, date, rate) %>% 
+  mutate(date = as.Date(date, "%d%b%Y")) %>% 
+  rename(county_fips = fips, 
+         rate_day = rate) %>%
+  mutate(county_fips = as.character(county_fips)) %>% 
+  filter(rate_day >= 0 & rate_day <= 100)
+
+df_us_prev %>% write_csv('us_prev_fips.csv')
+```
+
+### Read and format county level controls 
+```{r message=FALSE, warning=FALSE}
+
+df_us_ctrl <- read.csv('controls_US.csv')
+
+df_us_ctrl <- df_us_ctrl %>% select(-county_name) %>% 
+  rename(county_fips = county,
+         airport_dist = airport_distance,
+         conservative = republican,
+         age = medage, 
+         healthcare = physician_pc) %>%
+  mutate(county_fips = as.character(county_fips))
+```
+
+### Read and format social distancing data FB
+```{r, warning=FALSE, message=FALSE}
+
+fb_files <- list.files('../FB Data/US individual files/Mobility/',
+                       '*.csv', full.names = T)
+
+df_us_socdist <- fb_files %>% 
+  map(read_csv) %>% bind_rows()
+
+df_us_socdist <- df_us_socdist %>%
+  select(-age_bracket, -gender, -baseline_name, -baseline_type, -polygon_name) %>%
+  rename(date = ds,
+         county_fips = polygon_id,
+         socdist_tiles = all_day_bing_tiles_visited_relative_change,
+         socdist_single_tile = all_day_ratio_single_tile_users) %>%
+  mutate(county_fips = as.character(county_fips))
+```
+
+```{r}
+df_us_socdist %>% select(county_fips) %>% distinct() %>% nrow()
+```
+
+### Merge prevalence data
+```{r}
+# create sequence of dates
+date_sequence <- seq.Date(min(df_us_prev$date),
+                          max(df_us_prev$date), 1)
+                     
+# create data frame with time sequence
+df_dates = data.frame(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+# join data frames 
+df_us_prev <- df_us_prev %>%
+  plyr::join(df_us_ctrl, by='county_fips') %>% 
+  plyr::join(df_us_pers, by='county_fips') %>%
+  merge(df_dates, by='date') %>% 
+  arrange(county_fips, date)
+
+df_us_prev %>% select(-date, -rate_day, -time) %>% 
+  distinct() %>% write_csv('df_us_pers_fips.csv')
+```
+
+### Merge social distancing data
+```{r}
+
+# create sequence of dates
+date_sequence <- seq.Date(min(df_us_socdist$date),
+                          as.Date('2020-04-28'), 1)
+                     
+# create data frame with time sequence
+df_dates = data.frame(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+# join data frames 
+df_us_socdist <- df_us_socdist %>%
+  plyr::join(df_us_ctrl, by='county_fips') %>% 
+  plyr::join(df_us_pers, by='county_fips') %>%
+  inner_join(df_dates, by='date') %>% 
+  arrange(county_fips, date)
+
+fips_complete <- df_us_socdist %>% 
+  group_by(county_fips) %>% 
+  summarize(n = n()) %>% 
+  filter(! n<max(n)) %>% .$county_fips
+
+df_us_socdist <- df_us_socdist %>%
+  filter(county_fips %in% fips_complete)
+```
+
+
+
+### Control for weekend effect 
+```{r}
+easter <- seq.Date(as.Date('2020-04-10'), as.Date('2020-04-13'), 1)
+
+df_us_loess <- df_us_socdist %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  filter(!weekday %in% c('6','7') | date %in% easter) %>% 
+  split(.$county_fips) %>%
+  map(~ loess(socdist_single_tile ~ time, data = .)) %>%
+  map(predict, 1:max(df_us_socdist$time)) %>% 
+  bind_rows() %>% 
+  gather(key = 'county_fips', value = 'loess') %>% 
+  group_by(county_fips) %>% 
+  mutate(time = row_number())
+
+df_us_loess_2 <- df_us_socdist %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  filter(!weekday %in% c('6','7') | date %in% easter) %>% 
+  split(.$county_fips) %>%
+  map(~ loess(socdist_tiles ~ time, data = .)) %>%
+  map(predict, 1:max(df_us_socdist$time)) %>% 
+  bind_rows() %>% 
+  gather(key = 'county_fips', value = 'loess') %>% 
+  rename(loess_2 = loess) %>%
+  group_by(county_fips) %>% 
+  mutate(time = row_number())
+
+df_us_socdist <- df_us_socdist %>% 
+  merge(df_us_loess, by=c('county_fips', 'time')) %>% 
+  merge(df_us_loess_2, by=c('county_fips', 'time')) %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  mutate(socdist_single_tile_clean = ifelse(weekday %in% c('6','7') | date %in% easter, 
+                                            loess, socdist_single_tile),
+         socdist_tiles_clean = ifelse(weekday %in% c('6','7') | date %in% easter, 
+                                            loess_2, socdist_tiles)) %>%
+  arrange(county_fips, time) %>% 
+  select(-weekday)
+
+df_us_socdist <- df_us_socdist %>% drop_na() %>% mutate(time = time-1)
+```
+
+### Pick cleaned social distancing metrics
+```{r}
+df_us_socdist <- df_us_socdist %>% 
+  mutate(socdist_single_tile = socdist_single_tile_clean,
+         socdist_tiles = socdist_tiles_clean) %>% 
+  select(-loess, -loess_2, -socdist_single_tile_clean, -socdist_tiles_clean)
+```
+
+### Rescale Data
+```{r}
+lvl2_scaled <- df_us_prev %>% 
+  select(-time, -date, -rate_day) %>% 
+  distinct() %>% 
+  mutate_at(vars(-county_fips), scale)
+
+lvl1_scaled <- df_us_prev %>% select(county_fips, date, time, rate_day)
+
+df_us_prev_scaled <- plyr::join(lvl1_scaled, lvl2_scaled, by = 'county_fips') 
+```
+
+```{r}
+lvl2_scaled <- df_us_socdist %>% 
+  select(-time, -date, -socdist_tiles, -socdist_single_tile) %>% 
+  distinct() %>% 
+  mutate_at(vars(-county_fips), scale)
+
+lvl1_scaled <- df_us_socdist %>% 
+  select(county_fips, date, time, socdist_single_tile, socdist_tiles)
+
+df_us_socdist_scaled <- plyr::join(lvl1_scaled, lvl2_scaled, by = 'county_fips') 
+```
+
+```{r}
+df_us_prev_scaled$date %>% summary()
+df_us_socdist_scaled$date %>% summary()
+```
+
+# Define outcomes of interest
+### COVID - Extract onset
+```{r}
+# get onset day
+df_us_onset_prev <- df_us_prev_scaled %>% 
+  group_by(county_fips) %>% 
+  mutate(rate = rate_day-lag(rate_day)) %>% 
+  drop_na() %>%
+  mutate(rate_cs = cumsum(rate)) %>% 
+  filter(rate_cs > 0.1) %>%
+  summarize(onset_prev = min(time))
+  
+# merge with county data
+df_us_onset_prev <- df_us_prev_scaled %>% 
+  select(-date, -time, -rate_day) %>%
+  distinct() %>% 
+  mutate(county_fips = as.character(county_fips)) %>%
+  left_join(df_us_onset_prev, by = 'county_fips')
+
+# handle censored data
+df_us_onset_prev <- df_us_onset_prev %>%
+  mutate(event = ifelse(is.na(onset_prev), 0, 1)) %>%
+  mutate(onset_prev = replace_na(onset_prev, as.numeric(diff(range(df_us_prev$date)))+1))
+
+df_us_onset_prev$onset_prev %>% hist()
+df_us_onset_prev$onset_prev %>% mean()
+```
+
+### COVID - Extract slopes
+```{r}
+
+# cut time series
+df_us_prev_scaled <- df_us_prev_scaled %>% 
+  filter(date > '2020-03-15' & date < '2020-04-15')
+
+# extract slope prevalence
+df_us_slope_prev <- df_us_prev_scaled %>% 
+  split(.$county_fips) %>% 
+  map(~ lm(log(rate_day+1) ~ time, data = .)) %>%
+  map(coef) %>% 
+  map_dbl('time') %>% 
+  as.data.frame() %>% 
+  rownames_to_column('county_fips') %>% 
+  rename(slope_prev = '.')
+  
+# merge with county data
+df_us_slope_prev <- df_us_onset_prev %>% 
+  inner_join(df_us_slope_prev, by = 'county_fips')
+
+# handle censored data
+df_us_slope_prev_cens <- df_us_slope_prev %>% 
+  filter(slope_prev>=0) %>% 
+  mutate(slope_prev = scale(slope_prev),
+         onset_prev = scale(onset_prev))
+
+# standardize slopes
+df_us_slope_prev <- df_us_slope_prev %>% 
+  mutate(slope_prev = scale(slope_prev),
+         onset_prev = scale(onset_prev))
+```
+
+### Explore distributions
+```{r}
+
+df_us_onset_prev %>% ggplot(aes(onset_prev)) + geom_histogram(bins = 20)
+df_us_slope_prev %>% ggplot(aes(slope_prev)) + geom_histogram(bins = 20)
+df_us_slope_prev_cens %>% ggplot(aes(slope_prev)) + geom_histogram(bins = 20)
+
+```
+
+### Social Distancing - Change point analysis
+```{r}
+
+# keep only counties with full data
+fips_complete <- df_us_socdist_scaled %>% 
+  group_by(county_fips) %>% 
+  summarize(n = n()) %>% 
+  filter(n==max(.$n)) %>% 
+  .$county_fips
+
+# run changepoint analysis
+df_us_socdist_cpt_results <- df_us_socdist_scaled %>% 
+  select(county_fips, socdist_single_tile) %>%
+  filter(county_fips %in% fips_complete) %>% 
+  split(.$county_fips) %>%
+  map(~ cpt.meanvar(as.vector(.$socdist_single_tile),
+                    #penalty = 'Asymptotic',
+                    class=TRUE,
+                    param.estimates=TRUE,
+                    Q=1,
+                    test.stat = 'Normal'))
+
+df_us_socdist_cpt_results_2 <- df_us_socdist_scaled %>% 
+  select(county_fips, socdist_tiles) %>%
+  filter(county_fips %in% fips_complete) %>% 
+  split(.$county_fips) %>%
+  map(~ cpt.meanvar(as.vector(.$socdist_tiles),
+                    #penalty = 'Asymptotic',
+                    class=TRUE,
+                    param.estimates=TRUE,
+                    Q=1,
+                    test.stat = 'Normal'))
+
+# calculate change point
+df_us_socdist_cpt_day <- df_us_socdist_cpt_results %>% 
+  map(cpts) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(cpt_day_socdist = '.') %>%
+  rownames_to_column('county_fips')
+
+df_us_socdist_cpt_day_2 <- df_us_socdist_cpt_results_2 %>% 
+  map(cpts) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(cpt_day_socdist_2 = '.') %>%
+  rownames_to_column('county_fips')
+
+# calculate mean differences
+df_us_socdist_cpt_mean_diff <- df_us_socdist_cpt_results %>% 
+  map(param.est) %>% 
+  map(~ .$mean) %>% 
+  map(~ .[2]) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(mean_diff_socdist = '.') %>%
+  rownames_to_column('county_fips')
+
+df_us_socdist_cpt_mean_diff_2 <- df_us_socdist_cpt_results_2 %>% 
+  map(param.est) %>% 
+  map(~ .$mean) %>% 
+  map(~ -.[2]) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(mean_diff_socdist_2 = '.') %>%
+  rownames_to_column('county_fips')
+
+# calculate means
+df_us_socdist_mean <- df_us_socdist_scaled %>%
+  group_by(county_fips) %>%
+  summarize(mean_socdist = mean(socdist_single_tile))
+
+df_us_socdist_mean_2 <- df_us_socdist_scaled %>%
+  group_by(county_fips) %>%
+  summarize(mean_socdist_2 = -mean(socdist_tiles))
+
+# merge with county data
+df_us_cpt_socdist <- df_us_socdist_scaled %>% 
+  select(-time, -date, -socdist_single_tile, -socdist_tiles) %>%
+  distinct() %>% 
+  left_join(df_us_socdist_cpt_day, by='county_fips') %>%
+  left_join(df_us_socdist_cpt_day_2, by='county_fips') %>%
+  left_join(df_us_socdist_cpt_mean_diff, by='county_fips') %>%
+  left_join(df_us_socdist_cpt_mean_diff_2, by='county_fips') %>%
+  left_join(df_us_socdist_mean, by='county_fips') %>%
+  left_join(df_us_socdist_mean_2, by='county_fips') %>%
+  left_join(select(df_us_onset_prev, county_fips, onset_prev), by='county_fips') %>%
+  left_join(select(df_us_slope_prev, county_fips, slope_prev), by='county_fips') 
+
+# standardize mean/var differences
+df_us_cpt_socdist <- df_us_cpt_socdist %>% 
+  mutate(mean_diff_socdist = scale(mean_diff_socdist),
+         mean_diff_socdist_2 = scale(mean_diff_socdist_2),
+         mean_socdist = scale(mean_socdist),
+         mean_socdist_2 = scale(mean_socdist_2))
+
+# handle censored data
+df_us_cpt_socdist <- df_us_cpt_socdist %>% 
+  mutate(cpt_day_socdist = ifelse(is.na(cpt_day_socdist), as.numeric(diff(range(df_us_socdist$date))), cpt_day_socdist)) %>% 
+  mutate(event = ifelse(cpt_day_socdist >= as.numeric(diff(range(df_us_socdist$date))), 0, 1))
+```
+
+### Explore distributions
+```{r}
+df_us_cpt_socdist$cpt_day_socdist %>% hist()
+df_us_cpt_socdist$mean_diff_socdist %>% hist()
+df_us_cpt_socdist$mean_socdist %>% hist()
+
+df_us_cpt_socdist$cpt_day_socdist_2 %>% hist()
+df_us_cpt_socdist$mean_diff_socdist_2 %>% hist()
+df_us_cpt_socdist$mean_socdist_2 %>% hist()
+```
+
+```{r}
+
+for(i in head(df_us_socdist_cpt_results, 1)){
+  plot(i)
+}
+
+```
+
+```{r}
+
+for(i in head(df_us_socdist_cpt_results_2, 1)){
+  plot(i)
+}
+
+```
+
+
+# Fit models
+### Predict COVID onset
+```{r}
+us_cox_prev_onset <- run_analyses(y = 'onset_prev',  data = df_us_slope_prev, model = 'cox')
+```
+
+### Predict COVID growth
+```{r}
+us_lm_prev_slope <- run_analyses(y = 'slope_prev',  data = df_us_slope_prev, model = 'lm')
+```
+
+### Predict socdist change points
+```{r}
+us_cox_socdist_cpt <- run_analyses(y = 'cpt_day_socdist_2',  data = df_us_cpt_socdist, model = 'cox')
+```
+
+### Predict socdist means
+```{r}
+us_lm_socdist_mean <- run_analyses(y = 'mean_diff_socdist_2',  data = df_us_cpt_socdist, model = 'lm')
+```
+
+# Export data 
+```{r}
+
+us_list_results <- list(us_cox_prev_onset, us_lm_prev_slope,
+                         us_cox_socdist_cpt, us_lm_socdist_mean)
+
+us_results_names <- list('us_cox_prev_onset', 'us_lm_prev_slope',
+                      'us_cox_socdist_cpt', 'us_lm_socdist_mean')
+
+names(us_list_results) <- us_results_names
+
+save(us_list_results, file="us_list_results_fixed_window.RData")
+```
+
+# Extract results
+### Results - predict COVID onset
+```{r}
+us_agg_prev_onset <- us_list_results$us_cox_prev_onset %>% extract_all()
+```
+
+### Results - predict COVID growth
+```{r}
+us_agg_prev_slope <- us_list_results$us_lm_prev_slope %>% extract_all()
+```
+
+### Results - predict socdist start
+```{r}
+us_agg_socdist_cpt <- us_list_results$us_cox_socdist_cpt %>% extract_all()
+```
+
+### Results - predict socdist means
+```{r}
+us_agg_socdist_mean <- us_list_results$us_lm_socdist_mean %>% extract_all()
+```
+
+
+### Save aggregated results
+```{r}
+
+us_agg_fixed_window <- list(us_agg_prev_onset,
+               us_agg_prev_slope,
+               us_agg_socdist_cpt,
+               us_agg_socdist_mean
+               )
+
+names(us_agg_fixed_window) <- us_results_names
+
+save(us_agg_fixed_window, file="us_agg_fixed_window.RData")
+
+us_agg_fixed_window
+
+```
+
+
+
+```{r}
+write_csv(df_us_slope_prev, '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_us_slope_prev.csv')
+write_csv(df_us_cpt_socdist, '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_us_cpt_socdist.csv')
+
+```
+
+# Visualization
+
+```{r}
+counties <- read_csv('timeseries_usa_county_march1_april_09.csv') %>% 
+  select(county, countyname) %>% 
+  rename(county_fips = county) %>% 
+  mutate(county_fips = as.character(county_fips)) %>%
+  distinct()
+
+df_us_prev <- df_us_prev %>% inner_join(counties, by = 'county_fips')
+df_us_socdist <- df_us_socdist %>% inner_join(counties, by = 'county_fips')
+```
+
+
+```{r}
+gg_prev <- df_us_prev %>% 
+  filter(county_fips == 8037 | county_fips == 19079) %>%
+  filter(date >= '2020-03-1' & date <= '2020-05-01') %>%
+  mutate(window = ifelse(date >= '2020-03-15' & date <= '2020-04-15', 
+                         'in window', 'out of window')) %>%
+  
+  ggplot(aes(x=date, y=rate_day)) + 
+  geom_point(aes(col=countyname)) + 
+  geom_line(aes(col=countyname)) + 
+  theme_light() +
+  theme(legend.position="bottom", legend.margin=margin(t=-20)) +
+  guides(color=guide_legend(title="")) +
+
+  annotate('rect', xmin = as.Date('2020-03-15'), 
+           xmax = as.Date('2020-04-15'), 
+           ymin = -Inf, ymax = Inf, alpha = 0.07) +
+  
+  geom_segment(aes(x = as.Date('2020-04-07'), y = 0, 
+                   xend = as.Date('2020-04-07'), yend = 1), 
+               colour = "#00BFC4") +
+  
+  geom_segment(aes(x = as.Date('2020-03-09'), y = 0, 
+                   xend = as.Date('2020-03-09'), yend = 1), 
+               colour = "#F8766D") +
+  
+  annotate("text", x = as.Date('2020-04-07'), 
+           y = 2, label = "Onset \n Hamilton County", color = "#00BFC4", size = 3) +
+  annotate("text", x = as.Date('2020-03-09'), 
+           y = 2, label = "Onset \n Eagle County", color = "#F8766D", size = 3) +
+  annotate("text", x = as.Date('2020-03-31'), 
+           y = 9.5, label = "Time window used for\nanalysis of growth rates", 
+           color = "grey50", size = 3) +
+  ylab('Prevalence') +
+  xlab('') +
+  ylim(c(-1,10)) +
+  ggtitle("COVID-19 - comparison of onsets and \n growth rates in two counties") +
+  theme(plot.title = element_text(size=11)) +
+  theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank())
+
+
+gg_prev
+```
+
+
+```{r}
+
+
+gg_socdist <- df_us_socdist %>% 
+  filter(county_fips == 19137 | county_fips == 36081) %>%
+  filter(date >= '2020-03-1' & date <= '2020-05-01') %>%
+
+  ggplot(aes(x=date, y=socdist_tiles)) + 
+  #facet_wrap(~countyname) +
+  geom_point(aes(col=countyname)) + 
+  geom_line(aes(col=countyname)) + 
+  theme_light() +
+  theme(legend.position="bottom",legend.margin=margin(t=-20)) +
+  guides(color=guide_legend(title="")) +
+
+  
+    geom_segment(aes(x = as.Date('2020-03-23'), y = -.6, 
+                   xend = as.Date('2020-03-23'), yend = 0), 
+               colour = "#00BFC4") +
+  
+  geom_segment(aes(x = as.Date('2020-03-23'), y = -.6, 
+                   xend = as.Date('2020-04-28'), yend = -.6), 
+               colour = "#00BFC4") +
+  
+
+  
+  geom_segment(aes(x = as.Date('2020-03-14'), y = -.156, 
+                   xend = as.Date('2020-03-14'), yend = .17), 
+               colour = "#F8766D") +
+  
+  geom_segment(aes(x = as.Date('2020-03-14'), y = -.156, 
+                   xend = as.Date('2020-04-28'), yend = -.156), 
+               colour = "#F8766D") +
+
+  annotate("text", x = as.Date('2020-03-26'), 
+           y = .08, label = "Change point\nQueens County", color = "#00BFC4", size = 3) +
+  annotate("text", x = as.Date('2020-03-16'), 
+           y = .25, label = "Change point\nMontgommery County", color = "#F8766D", size = 3) +
+  ylab('Social distancing') +
+  xlab("") +
+  ylim(c(-.7,.3)) +
+  ggtitle("Social distancing - comparison of change \n points and means in two counties") + 
+  theme(plot.title = element_text(size=11)) +
+  theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank())
+
+gg_socdist
+```
+
+```{r}
+
+figure <- ggarrange(gg_prev, gg_socdist,
+                    labels = c("A", "B"),
+                    ncol = 2, nrow = 1)
+figure
+```
+

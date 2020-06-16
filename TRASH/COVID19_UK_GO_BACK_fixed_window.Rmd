@@ -1,0 +1,635 @@
+---
+title: "COVID19 UK"
+author: "Heinrich Peters"
+date: "4/23/2020"
+output: html_notebook
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# MAC
+ knitr::opts_knit$set(root.dir = '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data/UK')
+ 
+library(lmerTest)
+library(nlme)
+library(psych)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(party)
+library(doParallel)
+library(changepoint)
+library(survival)
+library(survminer)
+ 
+source('/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Code/COVID19_functions.R')
+```
+
+# Prepare data
+
+### Read and format prevalence data
+```{r warning=FALSE, message=FALSE}
+df_uk_prev <- read_csv('UK_timeseries_prep_2005.csv')
+
+df_uk_prev <- df_uk_prev %>% 
+  select(ut_area, date, rate) %>% 
+  rename(rate_day = rate) %>%
+  mutate(date = as.Date(date, "%d%b%Y"))
+
+df_uk_prev2 <- read_csv('UK_timeseries_prep_0506_laua_all.csv')
+
+df_uk_prev2 <- df_uk_prev2 %>% 
+  select(laua, date, males, popdens, manufacturing, tourism, health,
+         academic, medage, conservative, airport_dist, medinc, open,
+         extra, agree, neuro, sci, rate) %>%
+  rename(pers_o = open, 
+         pers_c = sci,
+         pers_e = extra,
+         pers_a = agree,
+         pers_n = neuro,
+         rate_day = rate,
+         age = medage,
+         male = males,
+         manufact = manufacturing,
+         healthcare = health,
+         academics = academic) %>%
+  mutate(date = as.Date(date, "%d%b%Y"))
+
+df_uk_prev2 %>% select(-date, -rate_day) %>% 
+  distinct() %>% write_csv('df_uk_pers_laua.csv')
+
+df_uk_prev2 %>% select(laua, date, rate_day) %>% write_csv('uk_prev_laua.csv')
+```
+
+### Personality
+```{r warning=FALSE, message=FALSE}
+df_uk_pers <- read_csv('timeseries_uk_utla_march9_april_09.csv')
+
+df_uk_pers <- df_uk_pers %>% 
+  select(ut_area, open, agree, neuro, sci, extra) %>% 
+  dplyr::rename(pers_o = open, 
+         pers_c = sci,
+         pers_e = extra,
+         pers_a = agree,
+         pers_n = neuro) %>%
+  distinct()
+
+df_uk_pers %>% write_csv('df_uk_pers_ut.csv')
+
+df_uk_pers_nuts <- read_csv('UK_socdist_fb_nuts3.csv')
+
+df_uk_pers_nuts <- df_uk_pers_nuts %>% 
+  select(nuts3, open, sci, extra, agree, neuro) %>%
+  dplyr::rename(pers_o = open, 
+                pers_c = sci,
+                pers_e = extra,
+                pers_a = agree,
+                pers_n = neuro) %>%
+  distinct()
+```
+
+### Social distancing
+```{r, warning=FALSE}
+
+fb_files <- list.files('../FB Data/UK individual files',
+                       '*.csv', full.names = T)
+
+df_uk_socdist <- fb_files %>% 
+  map(read.csv) %>% bind_rows()
+
+df_uk_socdist <- df_uk_socdist %>%
+  select(ds, all_day_bing_tiles_visited_relative_change,
+         all_day_ratio_single_tile_users, external_polygon_id) %>%
+  rename(date = ds,
+         nuts3 = external_polygon_id,
+         socdist_tiles = all_day_bing_tiles_visited_relative_change,
+         socdist_single_tile = all_day_ratio_single_tile_users) %>%
+  mutate(nuts3 = as.character(nuts3),
+         date = as.Date(date)) %>%
+  arrange(nuts3, date) %>%
+  drop_na()
+
+```
+
+
+```{r}
+df_uk_socdist %>% select(nuts3) %>% distinct() %>% nrow()
+```
+
+### Controls 
+```{r warning=FALSE, message=FALSE}
+df_uk_ctrl_nuts <- read_csv("controls_UK_nuts3.csv")
+df_uk_ctrl_nuts <- df_uk_ctrl_nuts %>% select(-nuts3_name)
+df_uk_ctrl_nuts <- df_uk_ctrl_nuts %>% rename(
+         age = medage,
+         male = males,
+         manufact = manufacturing,
+         healthcare = health,
+         academics = academic)
+
+
+df_uk_ctrl_ut <- read_csv("controls_UK_ut.csv")
+df_uk_ctrl_ut <- df_uk_ctrl_ut %>% select(-ut_name)
+df_uk_ctrl_ut <- df_uk_ctrl_ut %>% rename(
+         age = medage,
+         male = males,
+         manufact = manufacturing,
+         healthcare = health,
+         academics = academic)
+
+
+```
+
+### Merge prevalence data 
+```{r}
+df_uk_prev <- df_uk_prev %>% 
+  plyr::join(df_uk_pers, by='ut_area') %>% 
+  plyr::join(df_uk_ctrl_ut, by='ut_area')
+
+# create sequence of dates
+date_sequence <- seq.Date(min(df_uk_prev$date),
+                          max(df_uk_prev$date), 1)
+                     
+# create data frame with time sequence
+df_dates = tibble(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+# merge day index with gps data
+df_uk_prev = df_uk_prev %>% 
+  merge(df_dates, by='date') %>% 
+  arrange(ut_area) %>%
+  as_tibble()
+
+df_uk_prev %>% select(-date, -rate_day, -time) %>% 
+  distinct() %>% write_csv('df_uk_pers_ut.csv')
+```
+
+```{r}
+# create sequence of dates
+date_sequence <- seq.Date(min(df_uk_prev2$date),
+                          max(df_uk_prev2$date), 1)
+                     
+# create data frame with time sequence
+df_dates = tibble(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+# merge day index with gps data
+df_uk_prev2 = df_uk_prev2 %>% 
+  merge(df_dates, by='date') %>% 
+  arrange(laua) %>%
+  as_tibble()
+```
+
+### Merge social distancing data
+```{r}
+df_uk_socdist <- df_uk_socdist %>% 
+  plyr::join(df_uk_ctrl_nuts, by='nuts3') %>%
+  plyr::join(df_uk_pers_nuts, by='nuts3')
+
+# create sequence of dates
+date_sequence <- seq.Date(min(df_uk_socdist$date),
+                          as.Date('2020-04-28'), 1)
+                     
+# create data frame with time sequence
+df_dates = tibble(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+# merge day index with gps data
+df_uk_socdist = df_uk_socdist %>% 
+  inner_join(df_dates, by='date') %>% 
+  arrange(nuts3) %>%
+  as_tibble()
+
+df_uk_socdist %>% select(-date, -socdist_tiles, -socdist_single_tile, -time) %>% 
+  distinct() %>% write_csv('df_uk_pers_nuts.csv')
+
+```
+
+### Check timeframes 
+```{r}
+df_uk_prev$date %>% summary()
+df_uk_socdist$date %>% summary()
+```
+
+### Control for weekend effect in social distancing
+```{r}
+easter <- seq.Date(as.Date('2020-04-10'), as.Date('2020-04-13'), 1)
+
+df_uk_loess <- df_uk_socdist %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  filter(!(weekday %in% c('6','7') | date %in% easter)) %>% 
+  split(.$nuts3) %>%
+  map(~ loess(socdist_single_tile ~ time, data = .)) %>%
+  map(predict, 1:max(df_uk_socdist$time)) %>% 
+  bind_rows() %>% 
+  gather(key = 'nuts3', value = 'loess') %>% 
+  group_by(nuts3) %>% 
+  mutate(time = row_number())
+
+df_uk_loess_2 <- df_uk_socdist %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  filter(!(weekday %in% c('6','7') | date %in% easter)) %>% 
+  split(.$nuts3) %>%
+  map(~ loess(socdist_tiles ~ time, data = .)) %>%
+  map(predict, 1:max(df_uk_socdist$time)) %>% 
+  bind_rows() %>% 
+  gather(key = 'nuts3', value = 'loess') %>%
+  rename(loess_2 = loess) %>%
+  group_by(nuts3) %>% 
+  mutate(time = row_number())
+
+df_uk_socdist <- df_uk_socdist %>% 
+  merge(df_uk_loess, by=c('nuts3', 'time')) %>% 
+  merge(df_uk_loess_2, by=c('nuts3', 'time')) %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  mutate(socdist_single_tile_clean = ifelse(weekday %in% c('6','7') | date %in% easter, 
+                                            loess, socdist_single_tile),
+         socdist_tiles_clean = ifelse(weekday %in% c('6','7') | date %in% easter, 
+                                            loess_2, socdist_tiles)) %>%
+  arrange(nuts3, time) %>% 
+  select(-weekday)
+
+df_uk_socdist <- df_uk_socdist %>% drop_na() %>% mutate(time = time-1)
+```
+
+### Pick cleaned social distancing metrics
+```{r}
+
+df_uk_socdist <- df_uk_socdist %>% 
+  mutate(socdist_single_tile = socdist_single_tile_clean,
+         socdist_tiles = socdist_tiles_clean) %>% 
+  select(-loess, -loess_2, -socdist_single_tile_clean, -socdist_tiles_clean)
+
+```
+
+### Rescale Data
+```{r}
+lvl2_scaled_ut <- df_uk_prev %>% 
+  dplyr::select(-time, -date, -rate_day) %>% 
+  distinct() %>% 
+  mutate_at(vars(-ut_area), scale)
+
+lvl1_scaled_ut <- df_uk_prev %>% select(ut_area, date, time, rate_day)
+
+df_uk_prev_scaled <- plyr::join(lvl1_scaled_ut, lvl2_scaled_ut, by = 'ut_area')
+```
+
+```{r}
+lvl2_scaled_laua <- df_uk_prev2 %>% 
+  dplyr::select(-time, -date, -rate_day) %>% 
+  distinct() %>% 
+  mutate_at(vars(-laua), scale)
+
+lvl1_scaled_laua <- df_uk_prev2 %>% select(laua, date, time, rate_day)
+
+df_uk_prev2_scaled <- plyr::join(lvl1_scaled_laua, lvl2_scaled_laua, by = 'laua')
+```
+
+```{r}
+lvl2_scaled_nuts <- df_uk_socdist %>% 
+  dplyr::select(-time, -date, -socdist_tiles, -socdist_single_tile) %>% 
+  distinct() %>% 
+  mutate_at(vars(-nuts3), scale)
+
+lvl1_scaled_nuts <- df_uk_socdist %>% 
+  select(nuts3, date, time, socdist_single_tile, socdist_tiles) %>% 
+  mutate_at(vars(-nuts3, -time), scale)
+
+df_uk_socdist_scaled <- plyr::join(lvl1_scaled_nuts, lvl2_scaled_nuts, by = 'nuts3')
+```
+
+# Define outcomes of interest
+### COVID - Extract onset UT level
+```{r}
+# get onset day
+df_uk_onset_prev <- df_uk_prev_scaled %>% 
+  group_by(ut_area) %>% 
+  mutate(rate = rate_day-lag(rate_day)) %>% 
+  drop_na() %>%
+  mutate(rate_cs = cumsum(rate)) %>% 
+  filter(rate_cs > 0.1) %>%
+  summarize(onset_prev = min(time))
+
+# merge with county data
+df_uk_onset_prev <- df_uk_prev_scaled %>% 
+  select(-time, -date, -rate_day) %>%
+  distinct() %>% 
+  left_join(df_uk_onset_prev, by = 'ut_area')
+
+# handle censored data
+df_uk_onset_prev <- df_uk_onset_prev %>% 
+  mutate(event = ifelse(is.na(onset_prev), 0, 1)) %>% 
+  mutate(onset_prev = replace_na(onset_prev, as.numeric(diff(range(df_uk_prev$date)))+1))
+
+df_uk_onset_prev$onset_prev %>% hist()
+df_uk_onset_prev$onset_prev %>% mean()
+```
+
+### Extract slopes
+```{r}
+# cut time series
+df_uk_prev_scaled <- df_uk_prev_scaled %>% 
+  filter(date > '2020-03-15' & date < '2020-04-15')
+
+# extract slope prevalence
+df_uk_slope_prev <- df_uk_prev_scaled %>% split(.$ut_area) %>% 
+  map(~ lm(log(rate_day+1) ~ time, data = .)) %>%
+  map(coef) %>% 
+  map_dbl('time') %>% 
+  as.data.frame() %>% 
+  rownames_to_column('ut_area') %>% 
+  rename(slope_prev = '.')
+
+# merge with county data
+df_uk_slope_prev <- df_uk_onset_prev %>% 
+  inner_join(df_uk_slope_prev, by = 'ut_area') %>%
+  drop_na()
+
+# standardize slopes
+df_uk_slope_prev <- df_uk_slope_prev %>% 
+  mutate(slope_prev = scale(slope_prev),
+         onset_prev = scale(onset_prev))
+```
+
+### Explore distributions
+```{r}
+df_uk_onset_prev %>% ggplot(aes(onset_prev)) + geom_histogram()
+df_uk_slope_prev %>% ggplot(aes(slope_prev)) + geom_histogram()
+```
+
+
+### Extract COVID onset - LAD level
+```{r}
+
+# get onset day
+df_uk_onset_prev_laua <- df_uk_prev2_scaled %>% 
+  group_by(laua) %>% 
+  mutate(rate = rate_day-lag(rate_day)) %>% 
+  drop_na() %>%
+  mutate(rate_cs = cumsum(rate)) %>% 
+  filter(rate_cs > 0.1) %>%
+  summarize(onset_prev = min(time))
+  
+# merge with county data
+df_uk_onset_prev_laua <- df_uk_prev2_scaled %>% 
+  select(-time, -date, -rate_day) %>%
+  distinct() %>% 
+  left_join(df_uk_onset_prev_laua, by = 'laua')
+
+# handle censored data
+df_uk_onset_prev_laua <- df_uk_onset_prev_laua %>% 
+  mutate(event = ifelse(is.na(onset_prev), 0, 1)) %>% 
+  mutate(onset_prev = replace_na(onset_prev, as.numeric(diff(range(df_uk_prev2$date)))+1))
+
+```
+
+### Extract slopes
+```{r}
+# cut time series
+df_uk_prev2_scaled <- df_uk_prev2_scaled %>% 
+  filter(date > '2020-03-15' & date < '2020-04-15')
+
+# extract slope prevalence
+df_uk_slope_prev_laua <- df_uk_prev2_scaled %>% split(.$laua) %>% 
+  map(~ lm(log(rate_day+1) ~ time, data = .)) %>%
+  map(coef) %>% 
+  map_dbl('time') %>% 
+  as.data.frame() %>% 
+  rownames_to_column('laua') %>% 
+  rename(slope_prev = '.')
+
+# merge with county data
+df_uk_slope_prev_laua <- df_uk_onset_prev_laua %>% 
+  left_join(df_uk_slope_prev_laua, by = 'laua') %>%
+  mutate(slope_prev = replace_na(slope_prev, 0))
+
+# standardize slopes
+df_uk_slope_prev_laua <- df_uk_slope_prev_laua %>% 
+  mutate(slope_prev = scale(slope_prev),
+         onset_prev = scale(onset_prev))
+```
+
+### Explore distributions
+```{r}
+df_uk_onset_prev_laua %>% ggplot(aes(onset_prev)) + geom_histogram()
+df_uk_slope_prev_laua %>% ggplot(aes(slope_prev)) + geom_histogram()
+```
+
+### Social Distancing - Change point analysis
+```{r}
+# keep only counties with full data
+nuts_complete <- df_uk_socdist_scaled %>% 
+  group_by(nuts3) %>% 
+  summarize(n = n()) %>% 
+  filter(n==max(.$n)) %>% 
+  .$nuts3
+
+# run changepoint analysis
+df_uk_socdist_cpt_results <- df_uk_socdist_scaled %>% 
+  select(nuts3, socdist_single_tile) %>%
+  filter(nuts3 %in% nuts_complete) %>% 
+  split(.$nuts3) %>%
+  map(~ cpt.meanvar(as.vector(.$socdist_single_tile),
+                    #penalty = 'Asymptotic',
+                    class=TRUE,
+                    param.estimates=TRUE,
+                    Q=1,
+                    test.stat = 'Normal'))
+
+df_uk_socdist_cpt_results_2 <- df_uk_socdist_scaled %>% 
+  select(nuts3, socdist_tiles) %>%
+  filter(nuts3 %in% nuts_complete) %>% 
+  split(.$nuts3) %>%
+  map(~ cpt.meanvar(as.vector(.$socdist_tiles),
+                    #penalty = 'Asymptotic',
+                    class=TRUE,
+                    param.estimates=TRUE,
+                    Q=1,
+                    test.stat = 'Normal'))
+
+# calculate change point
+df_uk_socdist_cpt_day <- df_uk_socdist_cpt_results %>% 
+  map(cpts) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(cpt_day_socdist = '.') %>%
+  rownames_to_column('nuts3')
+
+df_uk_socdist_cpt_day_2 <- df_uk_socdist_cpt_results_2 %>% 
+  map(cpts) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(cpt_day_socdist_2 = '.') %>%
+  rownames_to_column('nuts3')
+
+# calculate mean differences
+df_uk_socdist_cpt_mean_diff <- df_uk_socdist_cpt_results %>% 
+  map(param.est) %>% 
+  map(~ .$mean) %>% 
+  map(~ .[2]) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(mean_diff_socdist = '.') %>%
+  rownames_to_column('nuts3')
+
+df_uk_socdist_cpt_mean_diff_2 <- df_uk_socdist_cpt_results_2 %>% 
+  map(param.est) %>% 
+  map(~ .$mean) %>% 
+  map(~ -.[2]) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(mean_diff_socdist_2 = '.') %>%
+  rownames_to_column('nuts3')
+
+# calculate means 
+df_uk_socdist_mean <- df_uk_socdist_scaled %>% 
+  group_by(nuts3) %>%
+  summarize(mean_socdist = mean(socdist_single_tile))
+
+df_uk_socdist_mean_2 <- df_uk_socdist_scaled %>% 
+  group_by(nuts3) %>%
+  summarize(mean_socdist_2 = -mean(socdist_tiles))
+
+# merge with county data
+nuts_ut_key <- read_csv('nuts3_ut.csv')
+
+df_uk_cpt_socdist <- df_uk_socdist_scaled %>% 
+  select(-time, -date, -socdist_single_tile, -socdist_tiles) %>%
+  distinct() %>% 
+  left_join(df_uk_socdist_cpt_day, by='nuts3') %>%
+  left_join(df_uk_socdist_cpt_day_2, by='nuts3') %>%
+  left_join(df_uk_socdist_cpt_mean_diff, by='nuts3') %>%
+  left_join(df_uk_socdist_cpt_mean_diff_2, by='nuts3') %>%
+  left_join(df_uk_socdist_mean, by='nuts3') %>%
+  left_join(df_uk_socdist_mean_2, by='nuts3') %>%
+  left_join(nuts_ut_key, by='nuts3') %>% 
+  left_join(select(df_uk_onset_prev, ut_area, onset_prev), by='ut_area') %>%
+  left_join(select(df_uk_slope_prev, ut_area, slope_prev), by='ut_area') %>%
+  select(-ut_area)
+
+# standardize mean/var differences
+df_uk_cpt_socdist <- df_uk_cpt_socdist %>% 
+  mutate(mean_diff_socdist = scale(mean_diff_socdist),
+         mean_diff_socdist_2 = scale(mean_diff_socdist_2),
+         mean_socdist = scale(mean_socdist),
+         mean_socdist_2 = scale(mean_socdist_2))
+
+# handle censored data
+df_uk_cpt_socdist <- df_uk_cpt_socdist %>% 
+  mutate(cpt_day_socdist = ifelse(is.na(cpt_day_socdist), 
+                                  as.numeric(diff(range(df_uk_cpt_socdist$date))), 
+                                  cpt_day_socdist)) %>% 
+  mutate(event = ifelse(cpt_day_socdist >= 
+                          as.numeric(diff(range(df_uk_socdist$date))), 0, 1))
+
+```
+
+```{r}
+df_uk_cpt_socdist$cpt_day_socdist %>% hist()
+df_uk_cpt_socdist$mean_diff_socdist %>% hist()
+df_uk_cpt_socdist$mean_socdist %>% hist()
+
+
+df_uk_cpt_socdist$cpt_day_socdist_2 %>% hist()
+df_uk_cpt_socdist$mean_diff_socdist_2 %>% hist()
+df_uk_cpt_socdist$mean_socdist_2 %>% hist()
+
+```
+
+```{r}
+
+for(i in head(df_uk_socdist_cpt_results, 5)){
+  plot(i)
+}
+
+```
+```{r}
+
+for(i in head(df_uk_socdist_cpt_results_2, 5)){
+  plot(i)
+}
+
+```
+
+# Fit models
+### Predict COVID onset
+```{r}
+uk_cox_prev_onset <- run_analyses(y = 'onset_prev',  data = df_uk_slope_prev_laua, model = 'cox')
+```
+
+### Predict COVID growth
+```{r}
+uk_lm_prev_slope <- run_analyses(y = 'slope_prev',  data = df_uk_slope_prev_laua, model = 'lm')
+```
+
+### Predict socdist change points
+```{r}
+uk_cox_socdist_cpt <- run_analyses(y = 'cpt_day_socdist_2',  data = df_uk_cpt_socdist, model = 'cox')
+```
+
+### Predict socdist means
+```{r}
+uk_lm_socdist_mean <- run_analyses(y = 'mean_socdist_2',  data = df_uk_cpt_socdist, model = 'lm')
+```
+
+# Export data 
+```{r}
+
+uk_list_results <- list(uk_cox_prev_onset, uk_lm_prev_slope,
+                         uk_cox_socdist_cpt, uk_lm_socdist_mean)
+
+uk_results_names <- list('uk_cox_prev_onset', 'uk_lm_prev_slope',
+                      'uk_cox_socdist_cpt', 'uk_lm_socdist_mean')
+
+names(uk_list_results) <- uk_results_names
+
+save(uk_list_results, file="uk_list_results.RData")
+```
+
+# Extract results
+### Results - predict COVID onset
+```{r}
+uk_agg_prev_onset <- uk_list_results$uk_cox_prev_onset %>% extract_all()
+```
+
+### Results - predict COVID growth
+```{r}
+uk_agg_prev_slope <- uk_list_results$uk_lm_prev_slope %>% extract_all()
+```
+
+### Results - predict socdist start
+```{r}
+uk_agg_socdist_cpt <- uk_list_results$uk_cox_socdist_cpt %>% extract_all()
+```
+
+### Results - predict socdist means
+```{r}
+uk_agg_socdist_mean <- uk_list_results$uk_lm_socdist_mean %>% extract_all()
+```
+
+
+### Save aggregated results
+```{r}
+uk_agg_fixed_window <- list(uk_agg_prev_onset,
+               uk_agg_prev_slope,
+               uk_agg_socdist_cpt,
+               uk_agg_socdist_mean
+               )
+
+names(uk_agg_fixed_window) <- uk_results_names
+
+save(uk_agg_fixed_window, file="uk_agg_fixed_window.RData")
+
+uk_agg_fixed_window
+```
+
+
+
+```{r}
+
+write_csv(df_uk_slope_prev, '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_uk_slope_prev.csv')
+write_csv(df_uk_cpt_socdist, '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_uk_cpt_socdist.csv')
+
+```
