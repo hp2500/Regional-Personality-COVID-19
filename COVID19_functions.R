@@ -8,28 +8,28 @@ run_models <- function(y, pers, data, model){
   
   if(model == 'lm'){
     
-    # predict slopes from personality
+    # no controls
     lm_base <- lm(y ~ pers, 
                   data = data)
     
-    # predict slopes from personality with controls
+    # socdem
     lm_soc <- lm(y ~ pers + 
                    age + male + conservative,
                  data = data)
     
-    # predict slopes from personality with controls
+    # econ
     lm_econ <- lm(y ~ pers + 
                     academics + medinc + manufact,
                   data = data)
     
-    # predict slopes from personality with controls
+    # pandemic
     lm_pan <- lm(y ~ pers + 
                    airport_dist + tourism + healthcare + popdens,
                  data = data)
     
     if(!str_detect(y, 'socdist')){
       
-      # predict slopes from personality with controls
+      # all
       lm_all <- lm(y ~ pers + 
                      age + male + conservative +
                      academics + medinc + manufact +
@@ -39,7 +39,7 @@ run_models <- function(y, pers, data, model){
     
     if(str_detect(y, 'socdist')){
       
-      # predict slopes from personality with controls
+      # all
       lm_all <- lm(y ~ pers + 
                      age + male + conservative +
                      academics + medinc + manufact +
@@ -56,21 +56,21 @@ run_models <- function(y, pers, data, model){
     
   }else if (model == 'cox'){
     
-    # predict slopes from personality
+    # none
     cox_base <- coxph(Surv(y, event) ~ pers, 
                       data = data)
     
-    # predict slopes from personality with controls
+    # soc
     cox_soc <- coxph(Surv(y, event) ~ pers + 
                        age + male + conservative,
                      data = data)
     
-    # predict slopes from personality with controls
+    # econ
     cox_econ <- coxph(Surv(y, event) ~ pers + 
                         academics + medinc + manufact,
                       data = data)
     
-    # predict slopes from personality with controls
+    # pan
     cox_pan <- coxph(Surv(y, event) ~ pers + 
                        airport_dist + tourism + healthcare + popdens,
                      data = data)

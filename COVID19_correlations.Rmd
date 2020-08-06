@@ -3,58 +3,48 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-```{r}
-
-us_slope <- read_csv("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_us_slope_prev.csv")
-
-
-us_slope %>% arrange(onset_prev) %>% select(county_fips, onset_prev) %>% head()
-us_slope %>% arrange(onset_prev) %>% select(county_fips, onset_prev) %>% tail(100)
-
-us_slope
-
-```
-
-
-```{r}
-
-us_cpt <- read_csv("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_us_cpt_socdist.csv")
-
-
-us_cpt %>% arrange(cpt_day_socdist_2) %>% select(county_fips, cpt_day_socdist_2) %>% head()
-us_cpt %>% arrange(cpt_day_socdist_2) %>% select(county_fips, cpt_day_socdist_2) %>% tail(100)
-
-us_slope
-
-```
-
-```{r}
-
-us_cpt <- read_csv("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_us_cpt_socdist.csv")
-
-
-us_cpt %>% arrange(cpt_day_socdist) %>% select(county_fips, cpt_day_socdist) %>% head()
-us_cpt %>% arrange(cpt_day_socdist) %>% select(county_fips, cpt_day_socdist) %>% tail(100)
-
-```
-
-
-```{r}
-us_cpt %>% select(mean_diff_socdist, mean_diff_socdist_2) %>% cor()
-```
-
-
 ### CORRELATIONS
-
 ```{r}
 us_cpt <- read_csv("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_us_cpt_socdist.csv")
-uk_cpt <- read_csv("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_uk_cpt_socdist.csv")
 ger_cpt <- read_csv("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_ger_cpt_socdist.csv")
+```
 
+
+```{r}
 setwd("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery")
-us_cpt %>% dplyr::select(-county_fips, -event) %>% cor(use='pairwise.complete') %>% as.data.frame() %>% write_csv('us_cor.csv')
-uk_cpt %>% dplyr::select(-nuts3, -event) %>% cor(use='pairwise.complete') %>% as.data.frame() %>% write_csv('uk_cor.csv')
-ger_cpt %>% dplyr::select(-kreis, -event) %>% cor(use='pairwise.complete') %>% as.data.frame() %>% write_csv('ger_cor.csv')
+us_cpt %>% dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
+                         onset_prev, slope_prev, cpt_day_socdist_2, mean_diff_socdist_2,
+                         age, male, conservative, 
+                         academics, medinc, manufact, 
+                         airport_dist, tourism, healthcare, popdens) %>% 
+  cor(use='pairwise.complete') %>% as.data.frame() %>% 
+  write_csv('us_cor.csv')
+
+
+ger_cpt %>% dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
+                         onset_prev, slope_prev, cpt_day_socdist_2, mean_diff_socdist_2,
+                         age, male, conservative, 
+                         academics, medinc, manufact, 
+                         airport_dist, tourism, healthcare, popdens) %>% 
+  cor(use='pairwise.complete') %>% as.data.frame() %>% 
+  write_csv('ger_cor.csv')
+```
+
+
+#Descriptives
+```{r}
+
+us_cpt %>% dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
+                         onset_prev, slope_prev, cpt_day_socdist_2, mean_diff_socdist_2,
+                         age, male, conservative, 
+                         academics, medinc, manufact, 
+                         airport_dist, tourism, healthcare, popdens) %>% map(sd, na.rm=T) %>% map(round, 3)
+
+ger_cpt %>% dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
+                         onset_prev, slope_prev, cpt_day_socdist_2, mean_diff_socdist_2,
+                         age, male, conservative, 
+                         academics, medinc, manufact, 
+                         airport_dist, tourism, healthcare, popdens) %>% map(sd) %>% map(round, 3)
 ```
 
 

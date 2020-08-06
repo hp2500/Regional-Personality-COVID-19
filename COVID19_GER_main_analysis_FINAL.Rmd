@@ -1,0 +1,651 @@
+---
+title: "COVID19 GER"
+author: "Heinrich Peters"
+date: "4/23/2020"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+
+#knitr::opts_chunk$set(echo = TRUE)
+
+knitr::opts_knit$set(root.dir = '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data/GER')
+
+options(tibble.print_max = 25)
+ 
+library(lmerTest)
+library(nlme)
+library(psych)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(party)
+library(survminer)
+library(survival)
+library(survMisc)
+library(changepoint)
+
+source('/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Code/COVID19_functions.R')
+
+
+```
+
+# Prepare data
+### Prevalence
+```{r message=FALSE, warning=FALSE}
+
+df_ger_prev <- read_csv('Germany_timeseries_prep.csv')
+
+df_ger_prev <- df_ger_prev %>% 
+  mutate(date = as.Date(date, "%d%b%Y"), 
+         kreis = as.character(kreis)) %>% 
+  dplyr::select(kreis, date, rate_day)
+  
+df_ger_prev %>% write_csv('ger_prev_kreis.csv')
+```
+
+### Scoial distancing
+```{r message=FALSE, warning=FALSE}
+
+fb_files <- list.files('../FB Data/GER individual files',
+                       '*.csv', full.names = T)
+
+df_ger_socdist <- fb_files %>% 
+  map(read.csv) %>% bind_rows()
+
+kreis_match <- read_csv('kreismatch.csv')
+
+df_ger_socdist <- df_ger_socdist %>% 
+  select(-polygon_name) %>% 
+  plyr::join(kreis_match, by = 'polygon_id') %>%
+  select(kreis, ds, all_day_bing_tiles_visited_relative_change,
+         all_day_ratio_single_tile_users) %>%
+  rename(date = ds,
+         socdist_tiles = all_day_bing_tiles_visited_relative_change,
+         socdist_single_tile = all_day_ratio_single_tile_users) %>%
+  mutate(kreis = as.character(kreis),
+         date = as.Date(date)) %>%
+  arrange(kreis, date)
+```
+
+```{r}
+df_ger_socdist %>% select(kreis) %>% distinct() %>% nrow()
+```
+
+
+### Personality 
+```{r message=FALSE, warning=FALSE}
+
+df_ger_pers <- read_csv('Germany_timeseries_prep.csv')
+
+df_ger_pers <- df_ger_pers %>% 
+  select(kreis, open, sci, extra, agree, neuro, ewz) %>%
+  dplyr::rename(pers_o = open, 
+         pers_c = sci,
+         pers_e = extra,
+         pers_a = agree,
+         pers_n = neuro) %>%
+  distinct() %>%
+  mutate(kreis = as.character(kreis))
+```
+
+
+### Controls 
+```{r}
+
+df_ger_ctrl <- read.csv2('Germany_controls.csv', sep = ';', dec=',')
+
+df_ger_ctrl <- df_ger_ctrl %>% select(-kreis_nme) %>%
+    mutate(kreis = as.character(kreis),
+           popdens = popdens %>% 
+             as.character() %>%
+             str_replace('\\.', '')%>%
+             as.numeric())
+
+df_ger_medinc <- read.csv2('kreis_medinc.csv', sep = ';', dec=',')
+
+df_ger_medinc <- df_ger_medinc %>% 
+  mutate(medinc = medinc %>% 
+             as.character() %>%
+             str_replace('\\.', '')%>%
+             as.numeric(),
+             kreis = as.character(kreis)) %>%
+   select(-kreis_name)
+
+df_ger_ctrl <- df_ger_ctrl %>% inner_join(df_ger_medinc, by = 'kreis') %>% 
+    mutate(male = 100-women) %>%
+  select(-gdp, -cdu, -women) %>%
+  rename(tourism = tourism_beds,
+         healthcare = hospital_beds,
+         airport_dist = airport,
+         conservative = afd)
+
+df_ger_pers %>% merge(df_ger_ctrl, by='kreis') %>% write_csv('df_ger_pers_kreis.csv')
+```
+
+### Merge prevalence data 
+```{r}
+# create sequence of dates
+date_sequence <- seq.Date(min(df_ger_prev$date),
+                          max(df_ger_prev$date), 1)
+                     
+# create data frame with time sequence
+df_dates = tibble(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+
+# merge prevalence data
+df_ger_prev <- df_ger_prev %>% 
+  inner_join(df_ger_pers, by = 'kreis') %>%
+  inner_join(df_ger_ctrl, by = 'kreis') %>%
+  merge(df_dates, by='date') %>% 
+  arrange(kreis)
+```
+
+### Merge socdist data
+```{r}
+# create sequence of dates
+date_sequence <- seq.Date(min(df_ger_socdist$date),
+                          max(df_ger_socdist$date), 1)
+                     
+# create data frame with time sequence
+df_dates = tibble(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+# merge socdist data
+df_ger_socdist <- df_ger_socdist %>% 
+  inner_join(df_ger_pers, by = 'kreis') %>%
+  inner_join(df_ger_ctrl, by = 'kreis') %>% 
+  merge(df_dates, by='date') %>% 
+  arrange(kreis)
+```
+
+
+### Descriptives
+```{r}
+
+df_ger_desc <- df_ger_socdist %>% 
+  dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
+                age, male, conservative, 
+                academics, medinc, manufact, 
+                airport_dist, tourism, healthcare, popdens, ewz) %>% 
+  distinct() %>% drop_na()
+
+ger_means <- df_ger_desc %>% summarise_all(weighted.mean, w=.$ewz)
+ger_sd <- df_ger_desc %>% summarise_all(wtd.var, weights=.$ewz) %>% map_df(sqrt)
+
+rbind(ger_means, ger_sd) %>% select(-ewz) %>% t() %>% round(3) %>% as.data.frame() %>%
+  write_csv('/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/ger_descriptives.csv')
+
+df_ger_socdist$kreis %>% unique() %>% length()
+df_ger_prev$kreis %>% unique() %>% length()
+
+df_ger_desc %>% summarise_all(sd)
+
+```
+
+### Control for weekend effect 
+```{r}
+easter <- seq.Date(as.Date('2020-04-10'), as.Date('2020-04-13'), 1)
+
+df_ger_loess <- df_ger_socdist %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  filter(!(weekday %in% c('6','7') | date %in% easter)) %>% 
+  split(.$kreis) %>%
+  map(~ loess(socdist_single_tile ~ time, data = .)) %>%
+  map(predict, 1:max(df_ger_socdist$time)) %>% 
+  bind_rows() %>% 
+  gather(key = 'kreis', value = 'loess') %>% 
+  group_by(kreis) %>% 
+  mutate(time = row_number())
+
+df_ger_loess_2 <- df_ger_socdist %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  filter(!(weekday %in% c('6','7') | date %in% easter)) %>% 
+  split(.$kreis) %>%
+  map(~ loess(socdist_tiles ~ time, data = .)) %>%
+  map(predict, 1:max(df_ger_socdist$time)) %>% 
+  bind_rows() %>% 
+  gather(key = 'kreis', value = 'loess') %>% 
+  rename(loess_2 = loess) %>%
+  group_by(kreis) %>% 
+  mutate(time = row_number())
+
+
+df_ger_socdist <- df_ger_socdist %>% 
+  merge(df_ger_loess, by=c('kreis', 'time')) %>% 
+  merge(df_ger_loess_2, by=c('kreis', 'time')) %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  mutate(socdist_single_tile_clean = ifelse(weekday %in% c('6','7') | date %in% easter, 
+                                            loess, socdist_single_tile),
+         socdist_tiles_clean = ifelse(weekday %in% c('6','7') | date %in% easter, 
+                                            loess_2, socdist_tiles)) %>%
+  arrange(kreis, time) %>% 
+  select(-weekday)
+
+df_ger_socdist <- df_ger_socdist %>% drop_na() %>% mutate(time = time-1)
+```
+
+### Include cleaned social distancing data 
+```{r}
+
+df_ger_socdist <- df_ger_socdist %>% 
+  mutate(socdist_single_tile = socdist_single_tile_clean,
+         socdist_tiles = socdist_tiles_clean) %>% 
+  select(-loess, -loess_2, -socdist_single_tile_clean, -socdist_tiles_clean)
+```
+
+### Rescale data
+```{r}
+
+lvl2_scaled <- df_ger_prev %>% 
+  dplyr::select(-time, -rate_day, -date) %>% 
+  distinct() %>% 
+  mutate_at(vars(-kreis), scale)
+  
+lvl1_scaled <- df_ger_prev %>% select(kreis, date, time, rate_day)
+
+df_ger_prev_scaled <- plyr::join(lvl1_scaled, lvl2_scaled, by = 'kreis')
+
+df_ger_prev_scaled
+
+```
+
+```{r}
+
+lvl2_scaled <- df_ger_socdist %>% 
+  dplyr::select(-time, -socdist_single_tile, -socdist_tiles, -date) %>% 
+  distinct() %>% 
+  mutate_at(vars(-kreis), scale)
+  
+lvl1_scaled <- df_ger_socdist %>% select(kreis, date, time, socdist_single_tile, socdist_tiles)
+
+df_ger_socdist_scaled <- plyr::join(lvl1_scaled, lvl2_scaled, by = 'kreis')
+
+df_ger_socdist_scaled
+
+```
+
+# Define outcomes of interest
+### COVID - Extract onset
+```{r}
+
+# get onset day
+df_ger_onset_prev <- df_ger_prev_scaled %>% 
+  group_by(kreis) %>% 
+  mutate(rate = rate_day-lag(rate_day)) %>% 
+  drop_na() %>%
+  mutate(rate_cs = cumsum(rate)) %>% 
+  filter(rate_cs > 0.1) %>%
+  summarize(onset_prev = min(time))
+  
+# merge with county data
+df_ger_onset_prev <- df_ger_prev_scaled %>% 
+  select(-date, -time, -rate_day) %>%
+  distinct() %>% 
+  left_join(df_ger_onset_prev, by = 'kreis')
+
+# handle censored data
+df_ger_onset_prev <- df_ger_onset_prev %>% 
+  mutate(event = ifelse(is.na(onset_prev), 0, 1)) %>% 
+  mutate(onset_prev = replace_na(onset_prev, as.numeric(diff(range(df_ger_prev$date)))+1))
+
+df_ger_onset_prev$onset_prev %>% hist()
+df_ger_onset_prev$onset_prev %>% mean()
+
+```
+
+### COVID - Extract slopes
+```{r}
+
+# cut time series
+df_ger_prev_scaled <- df_ger_prev_scaled %>% 
+  filter(date > '2020-03-01' & date < '2020-04-01')
+
+# extract slope prevalence
+df_ger_slope_prev <- df_ger_prev_scaled %>% 
+  split(.$kreis) %>% 
+  map(~ lm(log(rate_day+1) ~ time, data = .)) %>%
+  map(coef) %>% 
+  map_dbl('time') %>% 
+  as.data.frame() %>% 
+  rownames_to_column('kreis') %>% 
+  rename(slope_prev = '.')
+
+# merge with county data
+df_ger_slope_prev <- df_ger_onset_prev %>% 
+  left_join(df_ger_slope_prev, by = 'kreis') %>%
+  mutate(slope_prev = replace_na(slope_prev, 0))
+
+# standardize slopes
+df_ger_slope_prev <- df_ger_slope_prev %>% 
+  mutate(slope_prev = scale(slope_prev),
+         onset_prev = scale(onset_prev))
+```
+
+
+### Explore distributions
+```{r}
+
+df_ger_onset_prev %>% ggplot(aes(onset_prev)) + geom_histogram()
+df_ger_slope_prev %>% ggplot(aes(slope_prev)) + geom_histogram()
+
+```
+
+### Social Distancing - Change point analysis
+```{r}
+
+# keep only counties with full data
+kreis_complete <- df_ger_socdist_scaled %>% 
+  group_by(kreis) %>% 
+  summarize(n = n()) %>% 
+  filter(n==max(.$n)) %>% 
+  .$kreis
+
+# run changepoint analysis
+df_ger_socdist_cpt_results <- df_ger_socdist_scaled %>% 
+  select(kreis, socdist_single_tile) %>%
+  filter(kreis %in% kreis_complete) %>% 
+  split(.$kreis) %>%
+  map(~ cpt.meanvar(as.vector(.$socdist_single_tile),
+                    #penalty = 'Asymptotic',
+                    class=TRUE,
+                    param.estimates=TRUE,
+                    Q=1,
+                    test.stat = 'Normal'))
+
+df_ger_socdist_cpt_results_2 <- df_ger_socdist_scaled %>% 
+  select(kreis, socdist_tiles) %>%
+  filter(kreis %in% kreis_complete) %>% 
+  split(.$kreis) %>%
+  map(~ cpt.meanvar(as.vector(.$socdist_tiles),
+                    class=TRUE,
+                    param.estimates=TRUE,
+                    Q=1,
+                    test.stat = 'Normal'))
+
+# calculate change point
+df_ger_socdist_cpt_day <- df_ger_socdist_cpt_results %>% 
+  map(cpts) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(cpt_day_socdist = '.') %>%
+  rownames_to_column('kreis')
+
+df_ger_socdist_cpt_day_2 <- df_ger_socdist_cpt_results_2 %>% 
+  map(cpts) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(cpt_day_socdist_2 = '.') %>%
+  rownames_to_column('kreis')
+
+# calculate mean differences
+df_ger_socdist_cpt_mean_diff <- df_ger_socdist_cpt_results %>% 
+  map(param.est) %>% 
+  map(~ .$mean) %>% 
+  map(~ .[2]) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(mean_diff_socdist = '.') %>%
+  rownames_to_column('kreis')
+
+df_ger_socdist_cpt_mean_diff_2 <- df_ger_socdist_cpt_results_2 %>% 
+  map(param.est) %>% 
+  map(~ .$mean) %>% 
+  map(~ -.[2]) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(mean_diff_socdist_2 = '.') %>%
+  rownames_to_column('kreis')
+
+# calculate means 
+df_ger_socdist_mean <- df_ger_socdist_scaled %>% 
+  group_by(kreis) %>%
+  summarize(mean_socdist = mean(socdist_single_tile))
+
+df_ger_socdist_mean_2 <- df_ger_socdist_scaled %>% 
+  group_by(kreis) %>%
+  summarize(mean_socdist_2 = -mean(socdist_tiles))
+
+# merge with county data
+df_ger_cpt_socdist <- df_ger_socdist_scaled %>% 
+  select(-date, -time, -socdist_single_tile, -socdist_tiles) %>%
+  distinct() %>% 
+  left_join(df_ger_socdist_cpt_day, by='kreis') %>%
+  left_join(df_ger_socdist_cpt_day_2, by='kreis') %>%
+  left_join(df_ger_socdist_cpt_mean_diff, by='kreis') %>%
+  left_join(df_ger_socdist_cpt_mean_diff_2, by='kreis') %>%
+  left_join(df_ger_socdist_mean, by='kreis') %>%
+  left_join(df_ger_socdist_mean_2, by='kreis') %>%
+  left_join(select(df_ger_onset_prev, kreis, onset_prev), by='kreis') %>%
+  left_join(select(df_ger_slope_prev, kreis, slope_prev), by='kreis') 
+
+# standardize mean/var differences
+df_ger_cpt_socdist <- df_ger_cpt_socdist %>% 
+  mutate(mean_diff_socdist = scale(mean_diff_socdist),
+         mean_diff_socdist_2 = scale(mean_diff_socdist_2),
+         mean_socdist = scale(mean_socdist),
+         mean_socdist_2 = scale(mean_socdist_2))
+
+# handle censored data
+df_ger_cpt_socdist <- df_ger_cpt_socdist %>% 
+  mutate(cpt_day_socdist = ifelse(is.na(cpt_day_socdist), 
+                                  as.numeric(diff(range(df_ger_socdist$date))), 
+                                  cpt_day_socdist)) %>% 
+  mutate(event = ifelse(cpt_day_socdist >= 
+                          as.numeric(diff(range(df_ger_socdist$date))), 0, 1))
+```
+
+```{r}
+df_ger_cpt_socdist$cpt_day_socdist %>% hist()
+df_ger_cpt_socdist$mean_diff_socdist %>% hist()
+df_ger_cpt_socdist$mean_socdist %>% hist()
+```
+
+
+
+```{r}
+
+for(i in head(df_ger_socdist_cpt_results, 5)){
+  plot(i)
+}
+
+```
+
+# Fit models
+### Predict COVID onset
+```{r}
+ger_cox_prev_onset <- run_analyses(y = 'onset_prev',  data = df_ger_slope_prev, model = 'cox')
+```
+
+### Predict COVID growth
+```{r}
+ger_lm_prev_slope <- run_analyses(y = 'slope_prev',  data = df_ger_slope_prev, model = 'lm')
+```
+
+### Predict socdist change points
+```{r}
+ger_cox_socdist_cpt <- run_analyses(y = 'cpt_day_socdist_2',  data = df_ger_cpt_socdist, model = 'cox')
+```
+
+### Predict socdist means
+```{r}
+ger_lm_socdist_mean <- run_analyses(y = 'mean_diff_socdist_2',  data = df_ger_cpt_socdist, model = 'lm')
+```
+
+# Export data 
+```{r}
+
+ger_list_results <- list(ger_cox_prev_onset, ger_lm_prev_slope,
+                         ger_cox_socdist_cpt, ger_lm_socdist_mean)
+
+ger_results_names <- list('ger_cox_prev_onset', 'ger_lm_prev_slope',
+                      'ger_cox_socdist_cpt', 'ger_lm_socdist_mean')
+
+names(ger_list_results) <- ger_results_names
+
+save(ger_list_results, file="ger_list_results_fixed_window.RData")
+```
+
+# Extract results
+### Results - predict COVID onset
+```{r}
+ger_agg_prev_onset <- ger_list_results$ger_cox_prev_onset %>% extract_all()
+```
+
+### Results - predict COVID growth
+```{r}
+ger_agg_prev_slope <- ger_list_results$ger_lm_prev_slope %>% extract_all()
+```
+
+### Results - predict socdist start
+```{r}
+ger_agg_socdist_cpt <- ger_list_results$ger_cox_socdist_cpt %>% extract_all()
+```
+
+### Results - predict socdist means
+```{r}
+ger_agg_socdist_mean <- ger_list_results$ger_lm_socdist_mean %>% extract_all()
+```
+
+
+### Save aggregated results
+```{r}
+
+ger_agg_fixed_window <- list(ger_agg_prev_onset,
+               ger_agg_prev_slope,
+               ger_agg_socdist_cpt,
+               ger_agg_socdist_mean
+               )
+
+names(ger_agg_fixed_window) <- ger_results_names
+
+save(ger_agg_fixed_window, file="ger_agg_fixed_window.RData")
+
+ger_agg_fixed_window
+
+```
+
+
+```{r}
+write_csv(df_ger_slope_prev, '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_ger_slope_prev.csv')
+write_csv(df_ger_cpt_socdist, '/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_ger_cpt_socdist.csv')
+
+```
+
+# Visualizations 
+```{r}
+
+tto <- df_ger_cpt_socdist %>% 
+  ggplot(aes(x=onset_prev)) + 
+  geom_histogram(binwidth = 1) +
+  theme_light() +
+  ggtitle('Distribution - Time to Adoption') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Date of March')
+  
+soa <- df_ger_cpt_socdist %>% 
+  ggplot(aes(x=mean_diff_socdist_2)) + 
+  geom_histogram(binwidth = 1) +
+  theme_light() +
+  ggtitle('Distribution - Strength of Adjustment') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Standardized mean difference')
+
+
+figure <- ggarrange(tto, soa,
+                    labels = c("", ""),
+                    ncol = 2, nrow = 1)
+figure
+```
+
+```{r}
+
+# create sequence of dates
+date_sequence <- seq.Date(min(df_ger_prev$date),
+                          max(df_ger_prev$date), 1)
+                     
+# create data frame with time sequence
+df_dates = data.frame(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+tto <- df_ger_cpt_socdist %>%
+  merge(df_dates, by.x = 'onset_prev', by.y = 'time') %>%
+  filter(cpt_day_socdist_2 < 30) %>% 
+  ggplot(aes(x=date+1)) + 
+  geom_histogram(binwidth = 1) +
+  theme_light() +
+  ggtitle('Distribution - COVID-19 Onset') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Date of March')
+  
+soa <- df_ger_cpt_socdist %>% 
+  ggplot(aes(x=slope_prev)) + 
+  geom_histogram(binwidth = 0.1) +
+  theme_light() +
+  ggtitle('Distribution - COVID-19 Growth Rates') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Standardized growth rates')
+
+
+figure <- ggarrange(tto, soa,
+                    labels = c("", ""),
+                    ncol = 2, nrow = 1)
+figure
+```
+
+```{r}
+
+# create sequence of dates
+date_sequence <- seq.Date(min(df_ger_socdist$date),
+                          max(df_ger_socdist$date), 1)
+                     
+# create data frame with time sequence
+df_dates = data.frame(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+
+tto <- df_ger_cpt_socdist %>% 
+  merge(df_dates, by.x = 'cpt_day_socdist_2', by.y = 'time') %>%
+  filter(cpt_day_socdist_2 < 30) %>% 
+  ggplot(aes(x=date+1)) + 
+  geom_histogram(binwidth = 1) +
+  theme_light() +
+  ggtitle('Distribution - Time to Adoption') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Date')
+  
+soa <- df_ger_cpt_socdist %>% 
+  ggplot(aes(x=mean_diff_socdist_2)) + 
+  geom_histogram(binwidth = 1) +
+  theme_light() +
+  ggtitle('Distribution - Strength of Adjustment') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Standardized mean difference')
+
+
+figure <- ggarrange(tto, soa,
+                    labels = c("", ""),
+                    ncol = 2, nrow = 1)
+figure
+```
+
+
+```{r}
+df_ger_prev <- read_csv('Germany_timeseries_prep.csv') %>%
+  mutate(date = as.Date(date, "%d%b%Y")) 
+
+df_ger_prev %>% group_by(date) %>% summarize(sum(cumcase))
+```
+
+
+```{r}
+df
+```
+
