@@ -4,11 +4,11 @@ output: html_notebook
 ---
 
 
-# Import model objects 
+# Import functions and models
 ```{r}
 
-load('/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data/GER/ger_list_results_fixed_window.RData')
-load('/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data/US/us_list_results_fixed_window.RData')
+load('../Data/GER/ger_list_results_fixed_window.RData')
+load('../Data/US/us_list_results_fixed_window.RData')
 
 library(lmtest)
 library(car)

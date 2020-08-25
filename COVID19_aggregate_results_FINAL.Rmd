@@ -4,23 +4,22 @@ output: html_notebook
 ---
 
 
-```{r setup, include=FALSE}
+# Load functions
+```{r setup}
 
-options(tibble.print_max = 25)
- 
 library(tidyverse)
 
-source('/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Code/COVID19_functions.R')
+source('COVID19_functions.R')
 
 
 ```
 
-# Read Data
+# Read data
 ```{r}
-load("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data/US/us_agg.RData")
-load("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data/US/us_agg_fixed_window.RData")
-load("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data/GER/ger_agg.RData")
-load("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Data/GER/ger_agg_fixed_window.RData")
+load("../Data/US/us_agg.RData")
+load("../Data/US/us_agg_fixed_window.RData")
+load("../Data/GER/ger_agg.RData")
+load("../Data/GER/ger_agg_fixed_window.RData")
 
 ```
 

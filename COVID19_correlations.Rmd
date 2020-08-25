@@ -5,13 +5,12 @@ output: html_notebook
 
 ### CORRELATIONS
 ```{r}
-us_cpt <- read_csv("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_us_cpt_socdist.csv")
-ger_cpt <- read_csv("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery/df_ger_cpt_socdist.csv")
+us_cpt <- read_csv("../Delivery/df_us_cpt_socdist.csv")
+ger_cpt <- read_csv("../Delivery/df_ger_cpt_socdist.csv")
 ```
 
 
 ```{r}
-setwd("/Users/hp2500/Google Drive/STUDY/Columbia/Research/Corona/Delivery")
 us_cpt %>% dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
                          onset_prev, slope_prev, cpt_day_socdist_2, mean_diff_socdist_2,
                          age, male, conservative, 
