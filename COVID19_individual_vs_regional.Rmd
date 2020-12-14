@@ -1,0 +1,294 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup}
+knitr::opts_knit$set(root.dir = normalizePath('../Data/Individual/'))
+
+
+library(dplyr)
+library(lmerTest)
+library(ggplot2)
+library(tidyverse)
+
+source('COVID19_functions.R')
+
+```
+
+# Read data US
+```{r message=FALSE, warning=FALSE}
+US <- read.csv("US_countyadd.csv") # individual level survey responses
+fips_pers <- read.csv("df_us_pers_fips.csv") # county personality and controls
+prevalence_us <- read.csv("us_prev_fips.csv")
+```
+
+# Clean data US
+```{r message=FALSE, warning=FALSE}
+# remove outliers in income and education
+US$income <- as.numeric(as.character(US$income))
+US$income[US$income >= 1000000] <- 1000000
+US$educ[US$educ >= 10] <- 10
+
+# reformat age 
+US = US %>% mutate(age = 2020-(age+1906))
+
+# calculated days continuously from March 1st
+prevalence_us$month <- as.numeric(as.character(lapply(strsplit(as.character(prevalence_us$date), "\\-"), "[", 2)))
+prevalence_us$day <- as.numeric(as.character(lapply(strsplit(as.character(prevalence_us$date), "\\-"), "[", 3)))
+prevalence_us <- subset(prevalence_us, month == 3 | month == 4)
+prevalence_us$days_added <- 0
+prevalence_us$days_added[prevalence_us$month == 4] <- 31
+
+prevalence_us$days <- prevalence_us$day + prevalence_us$days_added
+prevalence_us <- prevalence_us[c("county_fips", "days", "rate_day")]
+
+US <- merge(prevalence_us, US, by = c("county_fips", "days"))
+
+```
+
+# Descriptives US
+```{r message=FALSE, warning=FALSE}
+US_descriptives <- merge(US, fips_pers, by = "county_fips")
+US_descriptives <- US_descriptives %>% dplyr::select(county_fips, socdist, ope, con, ext, agr, neu, age.x, age.y, income, educ, hhmember, gender, days, rate_day, pers_o, pers_c, pers_e, pers_a, pers_n, airport_dist, conservative,  male, popdens, manufact, tourism, academics, medinc, healthcare) 
+US_descriptives <- na.omit(US_descriptives)
+
+round(mean(US_descriptives$ope, na.rm = T), digits = 2)
+round(sd(US_descriptives$ope, na.rm = T), digits = 2)
+round(mean(US_descriptives$con, na.rm = T), digits = 2)
+round(sd(US_descriptives$con, na.rm = T), digits = 2)
+round(mean(US_descriptives$ext, na.rm = T), digits = 2)
+round(sd(US_descriptives$ext, na.rm = T), digits = 2)
+round(mean(US_descriptives$agr, na.rm = T), digits = 2)
+round(sd(US_descriptives$agr, na.rm = T), digits = 2)
+round(mean(US_descriptives$neu, na.rm = T), digits = 2)
+round(sd(US_descriptives$neu, na.rm = T), digits = 2)
+
+round(mean(US_descriptives$age.x, na.rm = T), digits = 2)
+round(sd(US_descriptives$age.x, na.rm = T), digits = 2)
+table(US_descriptives$gender) %>% prop.table()
+round(mean(US_descriptives$educ, na.rm = T), digits = 2)
+round(sd(US_descriptives$educ, na.rm = T), digits = 2)
+round(mean(US_descriptives$income, na.rm = T), digits = 2)
+round(sd(US_descriptives$income, na.rm = T), digits = 2)
+round(mean(US_descriptives$hhmember, na.rm = T), digits = 2)
+round(sd(US_descriptives$hhmember, na.rm = T), digits = 2)
+
+# calculate correlations
+US_correlations <- round(cor(US_descriptives[,c("socdist", "ope", "pers_o", "con", "pers_c", "ext", "pers_e", "agr", "pers_a",  "neu", "pers_n", "age.x", "age.y", "gender", "male", "conservative", "educ", "academics", "income", "medinc", "manufact", "airport_dist", "tourism", "healthcare", "hhmember", "popdens", "days", "rate_day")]), digits = 3)
+write.csv(US_correlations, file = "US_correlations.csv")
+```
+
+# Scale Data US
+```{r message=FALSE, warning=FALSE}
+# For the main analyses scale the datasets separately and then merge them 
+US_scaled <- US %>% dplyr::select(county_fips, socdist, ope, 
+                                  con, ext, agr, neu, age,
+                                  income, educ, hhmember, 
+                                  gender, days, rate_day) %>% 
+  group_by(county_fips) %>% filter(n()>=2) %>% ungroup() %>%
+  mutate_at(vars(-gender, -county_fips, - days), scale)
+
+fips_scaled <- fips_pers %>% dplyr::select(county_fips, pers_o, 
+                                           pers_c, pers_e, pers_a,
+                                           pers_n, airport_dist, conservative, 
+                                           age, male, popdens, manufact, 
+                                           tourism, academics, medinc, 
+                                           healthcare) %>%
+  mutate_at(vars(-county_fips),scale)
+
+US_scaled <- merge(US_scaled, fips_scaled, by = "county_fips")
+```
+
+
+
+# Openness US
+```{r message=FALSE, warning=FALSE}
+mlm_res_us_o <- run_mlm('socdist', 'pers_o', 'ope', 'county_fips', US_scaled)
+mlm_aggregator(mlm_res_us_o)
+```
+
+# Conscientiousness US
+```{r message=FALSE, warning=FALSE}
+mlm_res_us_c <- run_mlm('socdist', 'pers_c', 'con', 'county_fips', US_scaled)
+mlm_aggregator(mlm_res_us_c)
+```
+
+# Extraversion US
+```{r message=FALSE, warning=FALSE}
+mlm_res_us_e <- run_mlm('socdist', 'pers_e', 'ext', 'county_fips', US_scaled)
+mlm_aggregator(mlm_res_us_e)
+```
+
+# Agreeableness US
+```{r message=FALSE, warning=FALSE}
+mlm_res_us_a<- run_mlm('socdist', 'pers_a', 'agr', 'county_fips', US_scaled)
+mlm_aggregator(mlm_res_us_a)
+```
+
+# Neuroticism US
+```{r message=FALSE, warning=FALSE}
+mlm_res_us_n<- run_mlm('socdist', 'pers_n', 'neu', 'county_fips', US_scaled)
+mlm_aggregator(mlm_res_us_n)
+```
+
+# Read data GER
+```{r message=FALSE, warning=FALSE}
+# read data
+Germany <- read.csv("Germany_kreisadd.csv") # individual level survey responses
+kreis_pers <- read.csv("df_ger_pers_kreis.csv") # kreis personality and controls
+prevalence_ger <- read.csv("ger_prev_kreis.csv")
+```
+
+# Clean data GER
+```{r message=FALSE, warning=FALSE}
+# remove outliers in income and education
+Germany$income <- as.numeric(as.character(Germany$income))
+Germany$income[Germany$income >= 1000000] <- 1000000
+Germany$educ[Germany$educ >= 10] <- 10
+
+# reformat age
+Germany = Germany %>% mutate(age = 2020-(age+1906))
+
+# calculated days continuously from March 1st
+prevalence_ger$month <- as.numeric(as.character(lapply(strsplit(as.character(prevalence_ger$date), "\\-"), "[", 2)))
+prevalence_ger$day <- as.numeric(as.character(lapply(strsplit(as.character(prevalence_ger$date), "\\-"), "[", 3)))
+prevalence_ger <- subset(prevalence_ger, month == 3 | month == 4)
+prevalence_ger$days_added <- 0
+prevalence_ger$days_added[prevalence_ger$month == 4] <- 31
+
+prevalence_ger$days <- prevalence_ger$day + prevalence_ger$days_added
+prevalence_ger <- prevalence_ger[c("kreis", "days", "rate_day")]
+
+
+Germany <- merge(prevalence_ger, Germany, by = c("kreis", "days"))
+```
+
+# Descriptives GER
+```{r message=FALSE, warning=FALSE}
+# Get descriptives
+Germany_descriptives <- merge(Germany, kreis_pers, by = "kreis")
+head(Germany_descriptives)
+
+Germany_descriptives <- Germany_descriptives %>% dplyr::select(kreis, socdist, ope, con, ext, agr, neu, age.x, age.y, income, educ, hhmember, gender, days, rate_day, pers_o, pers_c, pers_e, pers_a, pers_n, airport_dist, conservative,  male, popdens, manufact, tourism, academics, medinc, healthcare) 
+Germany_descriptives <- na.omit(Germany_descriptives)
+
+round(mean(Germany_descriptives$ope, na.rm = T), digits = 2)
+round(sd(Germany_descriptives$ope, na.rm = T), digits = 2)
+round(mean(Germany_descriptives$con, na.rm = T), digits = 2)
+round(sd(Germany_descriptives$con, na.rm = T), digits = 2)
+round(mean(Germany_descriptives$ext, na.rm = T), digits = 2)
+round(sd(Germany_descriptives$ext, na.rm = T), digits = 2)
+round(mean(Germany_descriptives$agr, na.rm = T), digits = 2)
+round(sd(Germany_descriptives$agr, na.rm = T), digits = 2)
+round(mean(Germany_descriptives$neu, na.rm = T), digits = 2)
+round(sd(Germany_descriptives$neu, na.rm = T), digits = 2)
+
+round(mean(Germany_descriptives$age.x, na.rm = T), digits = 2)
+round(sd(Germany_descriptives$age.x, na.rm = T), digits = 2)
+table(Germany_descriptives$gender) %>% prop.table()
+round(mean(Germany_descriptives$educ, na.rm = T), digits = 2)
+round(sd(Germany_descriptives$educ, na.rm = T), digits = 2)
+round(mean(Germany_descriptives$income, na.rm = T), digits = 2)
+round(sd(Germany_descriptives$income, na.rm = T), digits = 2)
+round(mean(Germany_descriptives$hhmember, na.rm = T), digits = 2)
+round(sd(Germany_descriptives$hhmember, na.rm = T), digits = 2)
+
+# Calculate correlations
+Germany_correlations <- round(cor(Germany_descriptives[,c("socdist", "ope", "pers_o", "con", "pers_c", "ext", "pers_e", "agr", "pers_a",  "neu", "pers_n", "age.x", "age.y", "gender", "male", "conservative", "educ", "academics", "income", "medinc", "manufact", "airport_dist", "tourism", "healthcare", "hhmember", "popdens", "days", "rate_day")]), digits = 3)
+write.csv(Germany_correlations, file = "Germany_correlations.csv")
+```
+
+# Scale data GER
+```{r message=FALSE, warning=FALSE}
+# For the main analyses scale the datasets separately and then merge them 
+Germany_scaled <- Germany %>% dplyr::select(kreis, socdist, ope, con, ext, 
+                                            agr, neu, age, income, educ, hhmember, 
+                                            gender, days, rate_day) %>% 
+  group_by(kreis) %>% filter(n()>=2) %>% ungroup() %>%
+  mutate_at(vars(-kreis, -gender, - days), scale)
+
+kreis_scaled <- kreis_pers %>% dplyr::select(kreis, pers_o, pers_c, pers_e, pers_a, pers_n, airport_dist, conservative, age, male, popdens, manufact, tourism, healthcare, medinc, academics) %>%
+  mutate_at(vars(-kreis), scale)
+
+GER_scaled <- merge(Germany_scaled, kreis_scaled, by = "kreis")
+```
+
+
+# Openness GER
+```{r message=FALSE, warning=FALSE}
+mlm_res_ger_o <- run_mlm('socdist', 'pers_o', 'ope', 'kreis', GER_scaled)
+mlm_aggregator(mlm_res_ger_o)
+```
+
+# Conscientiousness GER
+```{r message=FALSE, warning=FALSE}
+mlm_res_ger_c <- run_mlm('socdist', 'pers_c', 'con', 'kreis', GER_scaled)
+mlm_aggregator(mlm_res_ger_c)
+```
+
+# Extraversion GER
+```{r message=FALSE, warning=FALSE}
+mlm_res_ger_e <- run_mlm('socdist', 'pers_e', 'ext', 'kreis', GER_scaled)
+mlm_aggregator(mlm_res_ger_e)
+```
+
+# Agreeableness GER
+```{r message=FALSE, warning=FALSE}
+mlm_res_ger_a<- run_mlm('socdist', 'pers_a', 'agr', 'kreis', GER_scaled)
+mlm_aggregator(mlm_res_ger_a)
+```
+
+# Neuroticism GER
+```{r message=FALSE, warning=FALSE}
+mlm_res_ger_n<- run_mlm('socdist', 'pers_n', 'neu', 'kreis', GER_scaled)
+mlm_aggregator(mlm_res_ger_n)
+```
+
+
+# Save results
+```{r message=FALSE, warning=FALSE}
+us_list_results_mlm <- list(mlm_res_us_o, mlm_res_us_c,
+                         mlm_res_us_e, mlm_res_us_a,
+                         mlm_res_us_n)
+
+us_results_names_mlm <- list('mlm_res_us_o', 'mlm_res_us_c',
+                         'mlm_res_us_e', 'mlm_res_us_a',
+                         'mlm_res_us_n')
+
+names(us_list_results_mlm) <- us_results_names_mlm
+save(us_list_results_mlm, file="us_list_results_mlm.RData")
+
+us_list_results_agg_mlm <- us_list_results_mlm %>% map(mlm_aggregator)
+names(us_list_results_agg_mlm) <- us_results_names_mlm
+save(us_list_results_agg_mlm, file="us_list_results_agg_mlm.RData")
+```
+
+```{r message=FALSE, warning=FALSE}
+ger_list_results_mlm <- list(mlm_res_ger_o, mlm_res_ger_c,
+                         mlm_res_ger_e, mlm_res_ger_a,
+                         mlm_res_ger_n)
+
+ger_results_names_mlm <- list('mlm_res_ger_o', 'mlm_res_ger_c',
+                         'mlm_res_ger_e', 'mlm_res_ger_a',
+                         'mlm_res_ger_n')
+
+names(ger_list_results_mlm) <- ger_results_names_mlm
+
+save(ger_list_results_mlm, file="ger_list_results_mlm.RData")
+
+ger_list_results_agg_mlm <- ger_list_results_mlm %>% map(mlm_aggregator)
+names(ger_list_results_agg_mlm) <- us_results_names_mlm
+save(ger_list_results_agg_mlm, file="ger_list_results_agg_mlm.RData")
+```
+
+```{r warning=FALSE}
+correlations_US <- cor(US_scaled[c("socdist", "ope", "con", "ext", "agr", "neu", "pers_o", "pers_c", "pers_e", "pers_a", "pers_n", "age.x", "male", "educ", "income", "hhmember", "age.y", "academics", "male", "healthcare", "manufact",  "airport_dist", "conservative",  "popdens", "tourism", "medinc", "days", "rate_day")], use = "complete.obs")
+write.csv(correlations_US, file = "Correlations_US_IndividualLevel.csv")
+
+correlations_Germany <- cor(GER_scaled[c("socdist", "ope", "con", "ext", "agr", "neu", "pers_o", "pers_c", "pers_e", "pers_a", "pers_n", "age.x", "male", "educ", "income",  "hhmember", "age.y", "academics", "male", "healthcare", "manufact","airport_dist", "conservative", "popdens", "tourism", "medinc", "days", "rate_day")], use = "complete.obs")
+write.csv(correlations_Germany, file = "Correlations_Germany_IndividualLevel.csv")
+
+```

@@ -1,0 +1,94 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup}
+load('../Data/US/us_list_results_fixed_window.RData')
+load('../Data/GER/ger_list_results_fixed_window.RData')
+source('table_functions.R')
+
+library(tidyverse)
+library(magrittr)
+library(purrr)
+library(survival)
+```
+
+
+```{r}
+coef_summarizer <- function(x){
+  x %>% rownames_to_column() %>% 
+    filter(rowname == 'airport_dist') %>% 
+    select(contains('all'))
+}
+
+us_list_results$us_lm_prev_cases %>% map(make_table) %>% 
+  map(coef_summarizer) %>% bind_rows() %>% summary()
+
+us_list_results$us_lm_prev_deaths %>% map(make_table) %>% 
+  map(coef_summarizer) %>% bind_rows() %>% summary()
+```
+
+
+### US Covid Onset
+```{r}
+us_list_results$us_cox_prev_onset %>% map(make_table) %>% map(select, contains('all'))
+  
+```
+
+### US Covid Growth
+```{r}
+us_list_results$us_lm_prev_slope %>% map(make_table)
+``` 
+
+### US cumulative cases
+```{r}
+us_list_results$us_lm_prev_cases %>% map(make_table) 
+```
+### US cumulative deaths
+```{r}
+us_list_results$us_lm_prev_deaths %>% map(make_table) 
+```
+
+### US socdist onset
+```{r}
+us_list_results$us_cox_socdist_cpt %>% map(make_table) 
+```
+
+### US socdist adjustment
+```{r}
+us_list_results$us_lm_socdist_mean %>% map(make_table) 
+```
+
+
+
+
+### GER Covid Onset
+```{r}
+ger_list_results$ger_cox_prev_onset %>% map(make_table) 
+```
+
+### GER Covid Growth
+```{r}
+ger_list_results$ger_lm_prev_slope %>% map(make_table) 
+``` 
+
+### GER cumulative cases
+```{r}
+ger_list_results$ger_lm_prev_cases %>% map(make_table) 
+```
+
+### GER cumulative deaths
+```{r}
+ger_list_results$ger_lm_prev_deaths %>% map(make_table) 
+```
+
+### GER socdist onset
+```{r}
+ger_list_results$ger_cox_socdist_cpt %>% map(make_table) 
+```
+
+### GER socdist adjustment
+```{r}
+ger_list_results$ger_lm_socdist_mean %>% map(make_table) 
+```

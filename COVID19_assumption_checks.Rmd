@@ -1,6 +1,8 @@
 ---
 title: "Assumption Checks"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 
@@ -14,8 +16,6 @@ library(lmtest)
 library(car)
 library(survival)
 library(tidyverse)
-
-
 ```
 
 # Define Functions 

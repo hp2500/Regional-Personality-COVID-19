@@ -1753,8 +1753,8 @@ summary {
 <h3>CORRELATIONS</h3>
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxudXNfY3B0IDwtIHJlYWRfY3N2KFwiLi4vRGVsaXZlcnkvZGZfdXNfY3B0X3NvY2Rpc3QuY3N2XCIpXG5gYGAifQ== -->
-<pre class="r"><code>us_cpt &lt;- read_csv(&quot;../Delivery/df_us_cpt_socdist.csv&quot;)</code></pre>
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxudXNfY3B0IDwtIHJlYWRfY3N2KFwiLi4vRGF0YS9VUy9kZl91c19jcHRfc29jZGlzdC5jc3ZcIilcbmBgYCJ9 -->
+<pre class="r"><code>us_cpt &lt;- read_csv(&quot;../Data/US/df_us_cpt_socdist.csv&quot;)</code></pre>
 <!-- rnb-source-end -->
 <!-- rnb-output-begin eyJkYXRhIjoiUGFyc2VkIHdpdGggY29sdW1uIHNwZWNpZmljYXRpb246XG5jb2xzKFxuICAuZGVmYXVsdCA9IGNvbF9kb3VibGUoKVxuKVxuU2VlIHNwZWMoLi4uKSBmb3IgZnVsbCBjb2x1bW4gc3BlY2lmaWNhdGlvbnMuXG4ifQ== -->
 <pre><code>Parsed with column specification:
@@ -1763,8 +1763,8 @@ cols(
 )
 See spec(...) for full column specifications.</code></pre>
 <!-- rnb-output-end -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuZ2VyX2NwdCA8LSByZWFkX2NzdihcIi4uL0RlbGl2ZXJ5L2RmX2dlcl9jcHRfc29jZGlzdC5jc3ZcIilcbmBgYCJ9 -->
-<pre class="r"><code>ger_cpt &lt;- read_csv(&quot;../Delivery/df_ger_cpt_socdist.csv&quot;)</code></pre>
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuZ2VyX2NwdCA8LSByZWFkX2NzdihcIi4uL0RhdGEvR0VSL2RmX2dlcl9jcHRfc29jZGlzdC5jc3ZcIilcbmBgYCJ9 -->
+<pre class="r"><code>ger_cpt &lt;- read_csv(&quot;../Data/GER/df_ger_cpt_socdist.csv&quot;)</code></pre>
 <!-- rnb-source-end -->
 <!-- rnb-output-begin eyJkYXRhIjoiUGFyc2VkIHdpdGggY29sdW1uIHNwZWNpZmljYXRpb246XG5jb2xzKFxuICAuZGVmYXVsdCA9IGNvbF9kb3VibGUoKVxuKVxuU2VlIHNwZWMoLi4uKSBmb3IgZnVsbCBjb2x1bW4gc3BlY2lmaWNhdGlvbnMuXG4ifQ== -->
 <pre><code>Parsed with column specification:
@@ -1777,166 +1777,32 @@ See spec(...) for full column specifications.</code></pre>
 <!-- rnb-text-begin -->
 <!-- rnb-text-end -->
 <!-- rnb-chunk-begin -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxudXNfY3B0ICU+JSBkcGx5cjo6c2VsZWN0KHBlcnNfbywgcGVyc19jLCBwZXJzX2UsIHBlcnNfYSwgcGVyc19uLCBcbiAgICAgICAgICAgICAgICAgICAgICAgICBvbnNldF9wcmV2LCBzbG9wZV9wcmV2LCBjcHRfZGF5X3NvY2Rpc3RfMiwgbWVhbl9kaWZmX3NvY2Rpc3RfMixcbiAgICAgICAgICAgICAgICAgICAgICAgICBhZ2UsIG1hbGUsIGNvbnNlcnZhdGl2ZSwgXG4gICAgICAgICAgICAgICAgICAgICAgICAgYWNhZGVtaWNzLCBtZWRpbmMsIG1hbnVmYWN0LCBcbiAgICAgICAgICAgICAgICAgICAgICAgICBhaXJwb3J0X2Rpc3QsIHRvdXJpc20sIGhlYWx0aGNhcmUsIHBvcGRlbnMpICU+JSBcbiAgY29yKHVzZT0ncGFpcndpc2UuY29tcGxldGUnKSAlPiUgYXMuZGF0YS5mcmFtZSgpICU+JSBcbiAgd3JpdGVfY3N2KCd1c19jb3IuY3N2JylcblxuXG5nZXJfY3B0ICU+JSBkcGx5cjo6c2VsZWN0KHBlcnNfbywgcGVyc19jLCBwZXJzX2UsIHBlcnNfYSwgcGVyc19uLCBcbiAgICAgICAgICAgICAgICAgICAgICAgICBvbnNldF9wcmV2LCBzbG9wZV9wcmV2LCBjcHRfZGF5X3NvY2Rpc3RfMiwgbWVhbl9kaWZmX3NvY2Rpc3RfMixcbiAgICAgICAgICAgICAgICAgICAgICAgICBhZ2UsIG1hbGUsIGNvbnNlcnZhdGl2ZSwgXG4gICAgICAgICAgICAgICAgICAgICAgICAgYWNhZGVtaWNzLCBtZWRpbmMsIG1hbnVmYWN0LCBcbiAgICAgICAgICAgICAgICAgICAgICAgICBhaXJwb3J0X2Rpc3QsIHRvdXJpc20sIGhlYWx0aGNhcmUsIHBvcGRlbnMpICU+JSBcbiAgY29yKHVzZT0ncGFpcndpc2UuY29tcGxldGUnKSAlPiUgYXMuZGF0YS5mcmFtZSgpICU+JSBcbiAgd3JpdGVfY3N2KCdnZXJfY29yLmNzdicpXG5gYGAifQ== -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxudXNfY3B0ICU+JSBkcGx5cjo6c2VsZWN0KHBlcnNfbywgcGVyc19jLCBwZXJzX2UsIHBlcnNfYSwgcGVyc19uLCBcbiAgICAgICAgICAgICAgICAgICAgICAgICBvbnNldF9wcmV2LCBzbG9wZV9wcmV2LCBjcHRfZGF5X3NvY2Rpc3RfMiwgbWVhbl9kaWZmX3NvY2Rpc3RfMixcbiAgICAgICAgICAgICAgICAgICAgICAgICBhZ2UsIG1hbGUsIGNvbnNlcnZhdGl2ZSwgXG4gICAgICAgICAgICAgICAgICAgICAgICAgYWNhZGVtaWNzLCBtZWRpbmMsIG1hbnVmYWN0LCBcbiAgICAgICAgICAgICAgICAgICAgICAgICBhaXJwb3J0X2Rpc3QsIHRvdXJpc20sIGhlYWx0aGNhcmUsIHBvcGRlbnMpICU+JSBcbiAgY29yKHVzZT0ncGFpcndpc2UuY29tcGxldGUnKSAlPiUgYXMuZGF0YS5mcmFtZSgpICU+JSBcbiAgd3JpdGVfY3N2KCcuLi9EYXRhL1VTL3VzX2Nvci5jc3YnKVxuYGBgIn0= -->
 <pre class="r"><code>us_cpt %&gt;% dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
                          onset_prev, slope_prev, cpt_day_socdist_2, mean_diff_socdist_2,
                          age, male, conservative, 
                          academics, medinc, manufact, 
                          airport_dist, tourism, healthcare, popdens) %&gt;% 
   cor(use=&#39;pairwise.complete&#39;) %&gt;% as.data.frame() %&gt;% 
-  write_csv(&#39;us_cor.csv&#39;)
-
-
-ger_cpt %&gt;% dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
+  write_csv(&#39;../Data/US/us_cor.csv&#39;)</code></pre>
+<!-- rnb-source-end -->
+<!-- rnb-chunk-end -->
+<!-- rnb-text-begin -->
+<!-- rnb-text-end -->
+<!-- rnb-chunk-begin -->
+<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuZ2VyX2NwdCAlPiUgZHBseXI6OnNlbGVjdChwZXJzX28sIHBlcnNfYywgcGVyc19lLCBwZXJzX2EsIHBlcnNfbiwgXG4gICAgICAgICAgICAgICAgICAgICAgICAgb25zZXRfcHJldiwgc2xvcGVfcHJldiwgY3B0X2RheV9zb2NkaXN0XzIsIG1lYW5fZGlmZl9zb2NkaXN0XzIsXG4gICAgICAgICAgICAgICAgICAgICAgICAgYWdlLCBtYWxlLCBjb25zZXJ2YXRpdmUsIFxuICAgICAgICAgICAgICAgICAgICAgICAgIGFjYWRlbWljcywgbWVkaW5jLCBtYW51ZmFjdCwgXG4gICAgICAgICAgICAgICAgICAgICAgICAgYWlycG9ydF9kaXN0LCB0b3VyaXNtLCBoZWFsdGhjYXJlLCBwb3BkZW5zKSAlPiUgXG4gIGNvcih1c2U9J3BhaXJ3aXNlLmNvbXBsZXRlJykgJT4lIGFzLmRhdGEuZnJhbWUoKSAlPiUgXG4gIHdyaXRlX2NzdignLi4vRGF0YS9HRVIvZ2VyX2Nvci5jc3YnKVxuYGBgIn0= -->
+<pre class="r"><code>ger_cpt %&gt;% dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
                          onset_prev, slope_prev, cpt_day_socdist_2, mean_diff_socdist_2,
                          age, male, conservative, 
                          academics, medinc, manufact, 
                          airport_dist, tourism, healthcare, popdens) %&gt;% 
   cor(use=&#39;pairwise.complete&#39;) %&gt;% as.data.frame() %&gt;% 
-  write_csv(&#39;ger_cor.csv&#39;)</code></pre>
+  write_csv(&#39;../Data/GER/ger_cor.csv&#39;)</code></pre>
 <!-- rnb-source-end -->
 <!-- rnb-chunk-end -->
-<!-- rnb-text-begin -->
-<p>#Descriptives</p>
-<!-- rnb-text-end -->
-<!-- rnb-chunk-begin -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuXG51c19jcHQgJT4lIGRwbHlyOjpzZWxlY3QocGVyc19vLCBwZXJzX2MsIHBlcnNfZSwgcGVyc19hLCBwZXJzX24sIFxuICAgICAgICAgICAgICAgICAgICAgICAgIG9uc2V0X3ByZXYsIHNsb3BlX3ByZXYsIGNwdF9kYXlfc29jZGlzdF8yLCBtZWFuX2RpZmZfc29jZGlzdF8yLFxuICAgICAgICAgICAgICAgICAgICAgICAgIGFnZSwgbWFsZSwgY29uc2VydmF0aXZlLCBcbiAgICAgICAgICAgICAgICAgICAgICAgICBhY2FkZW1pY3MsIG1lZGluYywgbWFudWZhY3QsIFxuICAgICAgICAgICAgICAgICAgICAgICAgIGFpcnBvcnRfZGlzdCwgdG91cmlzbSwgaGVhbHRoY2FyZSwgcG9wZGVucykgJT4lIG1hcChzZCwgbmEucm09VCkgJT4lIG1hcChyb3VuZCwgMylcbmBgYCJ9 -->
-<pre class="r"><code>
-us_cpt %&gt;% dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
-                         onset_prev, slope_prev, cpt_day_socdist_2, mean_diff_socdist_2,
-                         age, male, conservative, 
-                         academics, medinc, manufact, 
-                         airport_dist, tourism, healthcare, popdens) %&gt;% map(sd, na.rm=T) %&gt;% map(round, 3)</code></pre>
-<!-- rnb-source-end -->
-<!-- rnb-output-begin eyJkYXRhIjoiJHBlcnNfb1xuWzFdIDFcblxuJHBlcnNfY1xuWzFdIDFcblxuJHBlcnNfZVxuWzFdIDFcblxuJHBlcnNfYVxuWzFdIDFcblxuJHBlcnNfblxuWzFdIDFcblxuJG9uc2V0X3ByZXZcblsxXSAxNC4yMDNcblxuJHNsb3BlX3ByZXZcblsxXSAxLjAwNVxuXG4kY3B0X2RheV9zb2NkaXN0XzJcblsxXSA1LjAyNlxuXG4kbWVhbl9kaWZmX3NvY2Rpc3RfMlxuWzFdIDFcblxuJGFnZVxuWzFdIDFcblxuJG1hbGVcblsxXSAxXG5cbiRjb25zZXJ2YXRpdmVcblsxXSAxXG5cbiRhY2FkZW1pY3NcblsxXSAxXG5cbiRtZWRpbmNcblsxXSAxXG5cbiRtYW51ZmFjdFxuWzFdIDFcblxuJGFpcnBvcnRfZGlzdFxuWzFdIDFcblxuJHRvdXJpc21cblsxXSAxXG5cbiRoZWFsdGhjYXJlXG5bMV0gMVxuXG4kcG9wZGVuc1xuWzFdIDFcbiJ9 -->
-<pre><code>$pers_o
-[1] 1
-
-$pers_c
-[1] 1
-
-$pers_e
-[1] 1
-
-$pers_a
-[1] 1
-
-$pers_n
-[1] 1
-
-$onset_prev
-[1] 14.203
-
-$slope_prev
-[1] 1.005
-
-$cpt_day_socdist_2
-[1] 5.026
-
-$mean_diff_socdist_2
-[1] 1
-
-$age
-[1] 1
-
-$male
-[1] 1
-
-$conservative
-[1] 1
-
-$academics
-[1] 1
-
-$medinc
-[1] 1
-
-$manufact
-[1] 1
-
-$airport_dist
-[1] 1
-
-$tourism
-[1] 1
-
-$healthcare
-[1] 1
-
-$popdens
-[1] 1</code></pre>
-<!-- rnb-output-end -->
-<!-- rnb-source-begin eyJkYXRhIjoiYGBgclxuZ2VyX2NwdCAlPiUgZHBseXI6OnNlbGVjdChwZXJzX28sIHBlcnNfYywgcGVyc19lLCBwZXJzX2EsIHBlcnNfbiwgXG4gICAgICAgICAgICAgICAgICAgICAgICAgb25zZXRfcHJldiwgc2xvcGVfcHJldiwgY3B0X2RheV9zb2NkaXN0XzIsIG1lYW5fZGlmZl9zb2NkaXN0XzIsXG4gICAgICAgICAgICAgICAgICAgICAgICAgYWdlLCBtYWxlLCBjb25zZXJ2YXRpdmUsIFxuICAgICAgICAgICAgICAgICAgICAgICAgIGFjYWRlbWljcywgbWVkaW5jLCBtYW51ZmFjdCwgXG4gICAgICAgICAgICAgICAgICAgICAgICAgYWlycG9ydF9kaXN0LCB0b3VyaXNtLCBoZWFsdGhjYXJlLCBwb3BkZW5zKSAlPiUgbWFwKHNkKSAlPiUgbWFwKHJvdW5kLCAzKVxuYGBgIn0= -->
-<pre class="r"><code>ger_cpt %&gt;% dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
-                         onset_prev, slope_prev, cpt_day_socdist_2, mean_diff_socdist_2,
-                         age, male, conservative, 
-                         academics, medinc, manufact, 
-                         airport_dist, tourism, healthcare, popdens) %&gt;% map(sd) %&gt;% map(round, 3)</code></pre>
-<!-- rnb-source-end -->
-<!-- rnb-output-begin eyJkYXRhIjoiJHBlcnNfb1xuWzFdIDFcblxuJHBlcnNfY1xuWzFdIDFcblxuJHBlcnNfZVxuWzFdIDFcblxuJHBlcnNfYVxuWzFdIDFcblxuJHBlcnNfblxuWzFdIDFcblxuJG9uc2V0X3ByZXZcblsxXSAzLjcwMlxuXG4kc2xvcGVfcHJldlxuWzFdIDAuOTk3XG5cbiRjcHRfZGF5X3NvY2Rpc3RfMlxuWzFdIDEuNTY5XG5cbiRtZWFuX2RpZmZfc29jZGlzdF8yXG5bMV0gMVxuXG4kYWdlXG5bMV0gMVxuXG4kbWFsZVxuWzFdIDFcblxuJGNvbnNlcnZhdGl2ZVxuWzFdIDFcblxuJGFjYWRlbWljc1xuWzFdIDFcblxuJG1lZGluY1xuWzFdIDFcblxuJG1hbnVmYWN0XG5bMV0gMVxuXG4kYWlycG9ydF9kaXN0XG5bMV0gMVxuXG4kdG91cmlzbVxuWzFdIDFcblxuJGhlYWx0aGNhcmVcblsxXSAxXG5cbiRwb3BkZW5zXG5bMV0gMVxuIn0= -->
-<pre><code>$pers_o
-[1] 1
-
-$pers_c
-[1] 1
-
-$pers_e
-[1] 1
-
-$pers_a
-[1] 1
-
-$pers_n
-[1] 1
-
-$onset_prev
-[1] 3.702
-
-$slope_prev
-[1] 0.997
-
-$cpt_day_socdist_2
-[1] 1.569
-
-$mean_diff_socdist_2
-[1] 1
-
-$age
-[1] 1
-
-$male
-[1] 1
-
-$conservative
-[1] 1
-
-$academics
-[1] 1
-
-$medinc
-[1] 1
-
-$manufact
-[1] 1
-
-$airport_dist
-[1] 1
-
-$tourism
-[1] 1
-
-$healthcare
-[1] 1
-
-$popdens
-[1] 1</code></pre>
-<!-- rnb-output-end -->
-<!-- rnb-chunk-end -->
-<!-- rnb-text-begin -->
-<!-- rnb-text-end -->
 </div>
 
-<div id="rmd-source-code">LS0tCnRpdGxlOiAiUiBOb3RlYm9vayIKb3V0cHV0OiBodG1sX25vdGVib29rCi0tLQoKIyMjIENPUlJFTEFUSU9OUwpgYGB7cn0KdXNfY3B0IDwtIHJlYWRfY3N2KCIuLi9EZWxpdmVyeS9kZl91c19jcHRfc29jZGlzdC5jc3YiKQpnZXJfY3B0IDwtIHJlYWRfY3N2KCIuLi9EZWxpdmVyeS9kZl9nZXJfY3B0X3NvY2Rpc3QuY3N2IikKYGBgCgoKYGBge3J9CnVzX2NwdCAlPiUgZHBseXI6OnNlbGVjdChwZXJzX28sIHBlcnNfYywgcGVyc19lLCBwZXJzX2EsIHBlcnNfbiwgCiAgICAgICAgICAgICAgICAgICAgICAgICBvbnNldF9wcmV2LCBzbG9wZV9wcmV2LCBjcHRfZGF5X3NvY2Rpc3RfMiwgbWVhbl9kaWZmX3NvY2Rpc3RfMiwKICAgICAgICAgICAgICAgICAgICAgICAgIGFnZSwgbWFsZSwgY29uc2VydmF0aXZlLCAKICAgICAgICAgICAgICAgICAgICAgICAgIGFjYWRlbWljcywgbWVkaW5jLCBtYW51ZmFjdCwgCiAgICAgICAgICAgICAgICAgICAgICAgICBhaXJwb3J0X2Rpc3QsIHRvdXJpc20sIGhlYWx0aGNhcmUsIHBvcGRlbnMpICU+JSAKICBjb3IodXNlPSdwYWlyd2lzZS5jb21wbGV0ZScpICU+JSBhcy5kYXRhLmZyYW1lKCkgJT4lIAogIHdyaXRlX2NzdigndXNfY29yLmNzdicpCgoKZ2VyX2NwdCAlPiUgZHBseXI6OnNlbGVjdChwZXJzX28sIHBlcnNfYywgcGVyc19lLCBwZXJzX2EsIHBlcnNfbiwgCiAgICAgICAgICAgICAgICAgICAgICAgICBvbnNldF9wcmV2LCBzbG9wZV9wcmV2LCBjcHRfZGF5X3NvY2Rpc3RfMiwgbWVhbl9kaWZmX3NvY2Rpc3RfMiwKICAgICAgICAgICAgICAgICAgICAgICAgIGFnZSwgbWFsZSwgY29uc2VydmF0aXZlLCAKICAgICAgICAgICAgICAgICAgICAgICAgIGFjYWRlbWljcywgbWVkaW5jLCBtYW51ZmFjdCwgCiAgICAgICAgICAgICAgICAgICAgICAgICBhaXJwb3J0X2Rpc3QsIHRvdXJpc20sIGhlYWx0aGNhcmUsIHBvcGRlbnMpICU+JSAKICBjb3IodXNlPSdwYWlyd2lzZS5jb21wbGV0ZScpICU+JSBhcy5kYXRhLmZyYW1lKCkgJT4lIAogIHdyaXRlX2NzdignZ2VyX2Nvci5jc3YnKQpgYGAKCgojRGVzY3JpcHRpdmVzCmBgYHtyfQoKdXNfY3B0ICU+JSBkcGx5cjo6c2VsZWN0KHBlcnNfbywgcGVyc19jLCBwZXJzX2UsIHBlcnNfYSwgcGVyc19uLCAKICAgICAgICAgICAgICAgICAgICAgICAgIG9uc2V0X3ByZXYsIHNsb3BlX3ByZXYsIGNwdF9kYXlfc29jZGlzdF8yLCBtZWFuX2RpZmZfc29jZGlzdF8yLAogICAgICAgICAgICAgICAgICAgICAgICAgYWdlLCBtYWxlLCBjb25zZXJ2YXRpdmUsIAogICAgICAgICAgICAgICAgICAgICAgICAgYWNhZGVtaWNzLCBtZWRpbmMsIG1hbnVmYWN0LCAKICAgICAgICAgICAgICAgICAgICAgICAgIGFpcnBvcnRfZGlzdCwgdG91cmlzbSwgaGVhbHRoY2FyZSwgcG9wZGVucykgJT4lIG1hcChzZCwgbmEucm09VCkgJT4lIG1hcChyb3VuZCwgMykKCmdlcl9jcHQgJT4lIGRwbHlyOjpzZWxlY3QocGVyc19vLCBwZXJzX2MsIHBlcnNfZSwgcGVyc19hLCBwZXJzX24sIAogICAgICAgICAgICAgICAgICAgICAgICAgb25zZXRfcHJldiwgc2xvcGVfcHJldiwgY3B0X2RheV9zb2NkaXN0XzIsIG1lYW5fZGlmZl9zb2NkaXN0XzIsCiAgICAgICAgICAgICAgICAgICAgICAgICBhZ2UsIG1hbGUsIGNvbnNlcnZhdGl2ZSwgCiAgICAgICAgICAgICAgICAgICAgICAgICBhY2FkZW1pY3MsIG1lZGluYywgbWFudWZhY3QsIAogICAgICAgICAgICAgICAgICAgICAgICAgYWlycG9ydF9kaXN0LCB0b3VyaXNtLCBoZWFsdGhjYXJlLCBwb3BkZW5zKSAlPiUgbWFwKHNkKSAlPiUgbWFwKHJvdW5kLCAzKQpgYGAKCgoK</div>
+<div id="rmd-source-code">LS0tCnRpdGxlOiAiUiBOb3RlYm9vayIKb3V0cHV0OiBodG1sX25vdGVib29rCi0tLQoKIyMjIENPUlJFTEFUSU9OUwpgYGB7cn0KdXNfY3B0IDwtIHJlYWRfY3N2KCIuLi9EYXRhL1VTL2RmX3VzX2NwdF9zb2NkaXN0LmNzdiIpCmdlcl9jcHQgPC0gcmVhZF9jc3YoIi4uL0RhdGEvR0VSL2RmX2dlcl9jcHRfc29jZGlzdC5jc3YiKQpgYGAKCgpgYGB7cn0KdXNfY3B0ICU+JSBkcGx5cjo6c2VsZWN0KHBlcnNfbywgcGVyc19jLCBwZXJzX2UsIHBlcnNfYSwgcGVyc19uLCAKICAgICAgICAgICAgICAgICAgICAgICAgIG9uc2V0X3ByZXYsIHNsb3BlX3ByZXYsIGNwdF9kYXlfc29jZGlzdF8yLCBtZWFuX2RpZmZfc29jZGlzdF8yLAogICAgICAgICAgICAgICAgICAgICAgICAgYWdlLCBtYWxlLCBjb25zZXJ2YXRpdmUsIAogICAgICAgICAgICAgICAgICAgICAgICAgYWNhZGVtaWNzLCBtZWRpbmMsIG1hbnVmYWN0LCAKICAgICAgICAgICAgICAgICAgICAgICAgIGFpcnBvcnRfZGlzdCwgdG91cmlzbSwgaGVhbHRoY2FyZSwgcG9wZGVucykgJT4lIAogIGNvcih1c2U9J3BhaXJ3aXNlLmNvbXBsZXRlJykgJT4lIGFzLmRhdGEuZnJhbWUoKSAlPiUgCiAgd3JpdGVfY3N2KCcuLi9EYXRhL1VTL3VzX2Nvci5jc3YnKQpgYGAKCgpgYGB7cn0KZ2VyX2NwdCAlPiUgZHBseXI6OnNlbGVjdChwZXJzX28sIHBlcnNfYywgcGVyc19lLCBwZXJzX2EsIHBlcnNfbiwgCiAgICAgICAgICAgICAgICAgICAgICAgICBvbnNldF9wcmV2LCBzbG9wZV9wcmV2LCBjcHRfZGF5X3NvY2Rpc3RfMiwgbWVhbl9kaWZmX3NvY2Rpc3RfMiwKICAgICAgICAgICAgICAgICAgICAgICAgIGFnZSwgbWFsZSwgY29uc2VydmF0aXZlLCAKICAgICAgICAgICAgICAgICAgICAgICAgIGFjYWRlbWljcywgbWVkaW5jLCBtYW51ZmFjdCwgCiAgICAgICAgICAgICAgICAgICAgICAgICBhaXJwb3J0X2Rpc3QsIHRvdXJpc20sIGhlYWx0aGNhcmUsIHBvcGRlbnMpICU+JSAKICBjb3IodXNlPSdwYWlyd2lzZS5jb21wbGV0ZScpICU+JSBhcy5kYXRhLmZyYW1lKCkgJT4lIAogIHdyaXRlX2NzdignLi4vRGF0YS9HRVIvZ2VyX2Nvci5jc3YnKQpgYGAK</div>
 
 
 
