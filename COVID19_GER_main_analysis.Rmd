@@ -1,0 +1,1112 @@
+---
+title: "COVID19 GER"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+#knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = normalizePath('../Data/GER'))
+options(tibble.print_max = 25)
+
+library(lmerTest)
+library(nlme)
+library(psych)
+library(ggplot2)
+library(dplyr)
+library(tidyverse)
+library(party)
+library(survminer)
+library(survival)
+library(survMisc)
+library(changepoint)
+library(specr)
+
+source('COVID19_functions.R')
+```
+
+# Prepare data
+### Read and format prevalence data 
+```{r message=FALSE, warning=FALSE}
+df_ger_prev <- read_csv('GER_prevalence.csv')
+
+df_ger_prev <- df_ger_prev %>%
+  mutate(date = as.Date(date, "%d%b%Y"),
+         kreis = as.character(kreis)) %>% 
+  dplyr::select(kreis, date, rate_day) %>%
+  filter(date < '2020-04-01')
+
+df_ger_prev %>% write_csv('ger_prev_kreis.csv')
+```
+
+```{r message=FALSE, warning=FALSE}
+df_ger_death <- read_csv('GER_prevalence.csv')
+
+df_ger_death <-  df_ger_death %>%
+  mutate(date = as.Date(date, "%d%b%Y"), 
+         kreis = as.character(kreis))
+
+df_ger_death_0930 <- df_ger_death %>% 
+  filter(date == '2020-09-30') %>% 
+  rename(case_rate_0930 = rate_day,
+         death_rate_0930 = death_day) %>% 
+  select(kreis, case_rate_0930, death_rate_0930)
+
+df_ger_death_0331 <- df_ger_death %>% 
+  filter(date == '2020-03-31') %>% 
+  rename(case_rate_0331 = rate_day,
+         death_rate_0331 = death_day) %>% 
+  select(kreis, case_rate_0331, death_rate_0331)
+
+
+df_ger_death <- merge(df_ger_death_0331, df_ger_death_0930)
+
+# save df
+df_ger_death %>% write_csv('ger_death_kreis_maps.csv')
+```
+
+### Read and format scoial distancing data
+```{r message=FALSE, warning=FALSE}
+fb_files <- list.files('../FB Data/GER individual files',
+                       '*.csv', full.names = T)
+
+df_ger_socdist <- fb_files %>% 
+  map(read.csv) %>% bind_rows()
+
+kreis_match <- read_csv('kreismatch.csv')
+
+df_ger_socdist <- df_ger_socdist %>%
+  select(-polygon_name) %>%
+  plyr::join(kreis_match, by = 'polygon_id') %>%
+  select(kreis, ds, all_day_bing_tiles_visited_relative_change,
+         all_day_ratio_single_tile_users) %>%
+  rename(date = ds,
+         socdist_tiles = all_day_bing_tiles_visited_relative_change,
+         socdist_single_tile = all_day_ratio_single_tile_users) %>%
+  mutate(kreis = as.character(kreis),
+         date = as.Date(date)) %>%
+  arrange(kreis, date)
+```
+
+### Read and format personality data 
+```{r message=FALSE, warning=FALSE}
+df_ger_pers <- read_csv('GER_personality_2.csv')
+
+df_ger_pers %>% filter(frequ >= 50) %>% .$frequ %>% mean()
+
+df_ger_pers <- df_ger_pers %>% 
+  filter(frequ >= 50) %>%
+  select(kreis, open, sci, extra, agree, neuro) %>%
+  dplyr::rename(pers_o = open,
+         pers_c = sci,
+         pers_e = extra,
+         pers_a = agree,
+         pers_n = neuro) %>%
+  distinct() %>%
+  mutate(kreis = as.character(kreis))
+```
+
+### Read and format county level controls 
+```{r message=FALSE, warning=FALSE}
+df_ger_ctrl <- read_csv('GER_controls_new.csv')
+
+df_ger_ctrl <- df_ger_ctrl %>%
+  select(-gdp, -cdu, -kreis_nme) %>%
+  rename(tourism = tourism_beds,
+         healthcare = hospital_beds,
+         airport_dist = airport,
+         conservative = afd, 
+         popdens = popdens_new) %>%
+  mutate(kreis = as.character(kreis))
+
+
+df_ger_temp <- read_csv("GER_controls_weather_2.csv") %>% 
+  select(kreis, kr_tamm_202003) %>% 
+  rename(temp = kr_tamm_202003) %>%
+  mutate(kreis = as.character(as.numeric(kreis)))
+
+df_ger_ctrl <- df_ger_ctrl %>% left_join(df_ger_temp, 'kreis')
+
+df_ger_pers %>% merge(df_ger_ctrl, by='kreis') %>% 
+  write_csv('df_ger_pers_kreis.csv')
+```
+
+### Merge prevalence data 
+```{r message=FALSE, warning=FALSE}
+# create sequence of dates
+date_sequence <- seq.Date(min(df_ger_prev$date),
+                          max(df_ger_prev$date), 1)
+                     
+# create data frame with time sequence
+df_dates = tibble(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+# merge prevalence data
+df_ger_prev <- df_ger_prev %>% 
+  inner_join(df_ger_pers, by = 'kreis') %>%
+  inner_join(df_ger_ctrl, by = 'kreis') %>%
+  merge(df_dates, by='date') %>%
+  arrange(kreis, date) %>%
+  drop_na()
+
+df_ger_prev %>% select(kreis) %>% distinct() %>% nrow()
+```
+
+```{r message=FALSE, warning=FALSE}
+# join data frames
+df_ger_death <- df_ger_death %>%
+  plyr::join(df_ger_ctrl, by='kreis') %>%
+  plyr::join(df_ger_pers, by='kreis') %>%
+  drop_na()
+
+# save df
+df_ger_death %>%
+  #select(kreis, case_rate, death_rate) %>%
+  write_csv('ger_death_kreis_controls.csv')
+```
+
+### Merge social distancing data
+```{r message=FALSE, warning=FALSE}
+# create sequence of dates
+date_sequence <- seq.Date(min(df_ger_socdist$date),
+                          max(df_ger_socdist$date), 1)
+                     
+# create data frame with time sequence
+df_dates = tibble(date_sequence, 1:length(date_sequence))
+names(df_dates) <- c('date', 'time')
+
+# merge socdist data
+df_ger_socdist <- df_ger_socdist %>% 
+  inner_join(df_ger_pers, by = 'kreis') %>%
+  inner_join(df_ger_ctrl, by = 'kreis') %>% 
+  merge(df_dates, by='date') %>% 
+  arrange(kreis)
+
+df_ger_socdist %>% select(kreis) %>% distinct() %>% nrow()
+
+```
+
+### Control for weekend effect 
+```{r message=FALSE, warning=FALSE}
+easter <- seq.Date(as.Date('2020-04-10'), as.Date('2020-04-13'), 1)
+
+df_ger_loess <- df_ger_socdist %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  filter(!(weekday %in% c('6','7') | date %in% easter)) %>% 
+  split(.$kreis) %>%
+  map(~ loess(socdist_single_tile ~ time, data = .)) %>%
+  map(predict, 1:max(df_ger_socdist$time)) %>% 
+  bind_rows() %>% 
+  gather(key = 'kreis', value = 'loess') %>% 
+  group_by(kreis) %>% 
+  mutate(time = row_number())
+
+df_ger_loess_2 <- df_ger_socdist %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  filter(!(weekday %in% c('6','7') | date %in% easter)) %>% 
+  split(.$kreis) %>%
+  map(~ loess(socdist_tiles ~ time, data = .)) %>%
+  map(predict, 1:max(df_ger_socdist$time)) %>% 
+  bind_rows() %>% 
+  gather(key = 'kreis', value = 'loess') %>% 
+  rename(loess_2 = loess) %>%
+  group_by(kreis) %>% 
+  mutate(time = row_number())
+
+df_ger_socdist <- df_ger_socdist %>% 
+  merge(df_ger_loess, by=c('kreis', 'time')) %>% 
+  merge(df_ger_loess_2, by=c('kreis', 'time')) %>% 
+  mutate(weekday = format(date, '%u')) %>% 
+  mutate(socdist_single_tile_clean = ifelse(weekday %in% c('6','7') | date %in% easter, 
+                                            loess, socdist_single_tile),
+         socdist_tiles_clean = ifelse(weekday %in% c('6','7') | date %in% easter, 
+                                            loess_2, socdist_tiles)) %>%
+  arrange(kreis, time) %>% 
+  select(-weekday)
+
+df_ger_socdist <- df_ger_socdist %>% drop_na() %>% mutate(time = time-1)
+```
+
+### Include cleaned social distancing data 
+```{r message=FALSE, warning=FALSE}
+df_ger_socdist <- df_ger_socdist %>% 
+  mutate(socdist_single_tile = socdist_single_tile_clean,
+         socdist_tiles = socdist_tiles_clean) %>% 
+  select(-loess, -loess_2, -socdist_single_tile_clean, -socdist_tiles_clean)
+```
+
+
+# Define outcomes of interest
+### COVID - Extract onset
+```{r message=FALSE, warning=FALSE}
+# get onset day
+df_ger_onset_prev <- df_ger_prev %>% 
+  group_by(kreis) %>% 
+  filter(rate_day > 0.1) %>%
+  summarise(onset_prev = min(time))
+  
+# merge with county data
+df_ger_onset_prev <- df_ger_prev %>% 
+  select(-date, -time, -rate_day) %>%
+  distinct() %>% 
+  left_join(df_ger_onset_prev, by = 'kreis')
+
+# handle censored data
+df_ger_onset_prev <- df_ger_onset_prev %>% 
+  mutate(event = ifelse(is.na(onset_prev), 0, 1)) %>% 
+  mutate(onset_prev = replace_na(onset_prev, as.numeric(diff(range(df_ger_prev$date)))+1))
+```
+
+### COVID - Extract slopes
+```{r message=FALSE, warning=FALSE}
+# cut time series
+df_ger_prev <- df_ger_prev %>% 
+  filter(date > '2020-03-01' & date < '2020-04-01')
+
+# extract slope prevalence
+df_ger_slope_prev <- df_ger_prev %>% 
+  split(.$kreis) %>% 
+  map(~ lm(log(rate_day+1) ~ time, data = .)) %>%
+  map(coef) %>% 
+  map_dbl('time') %>% 
+  as.data.frame() %>% 
+  rownames_to_column('kreis') %>%
+  rename(slope_prev = '.')
+
+# merge with county data
+df_ger_slope_prev <- df_ger_onset_prev %>% 
+  left_join(df_ger_slope_prev, by = 'kreis')
+
+# get unscaled object for descriptives
+df_ger_prev_desc <- df_ger_slope_prev
+```
+
+```{r message=FALSE, warning=FALSE}
+# cut time series before onset
+df_ger_slope_var <- df_ger_prev %>% 
+  filter(date <= '2020-04-30') %>%
+  group_by(kreis) %>% 
+  filter(rate_day > 0.1) %>%
+  mutate(time = time-min(time)+1) %>%
+  ungroup() %>%
+  filter(time <= 30)
+
+# extract slope prevalence
+df_ger_slope_var <- df_ger_slope_var %>% 
+  split(.$kreis) %>% 
+  map(~ lm(log(rate_day+1) ~ time, data = .)) %>%
+  map(coef) %>% 
+  map_dbl('time') %>% 
+  as.data.frame() %>% 
+  rownames_to_column('kreis') %>% 
+  rename(slope_prev_var = '.')
+
+# merge with county data
+df_ger_slope_prev <- df_ger_slope_prev %>% 
+  left_join(df_ger_slope_var, by = 'kreis') %>%
+  mutate(slope_prev_var = replace_na(slope_prev_var, 0))
+```
+
+### Social Distancing - Change point analysis
+```{r message=FALSE, warning=FALSE}
+# keep only counties with full data
+kreis_complete <- df_ger_socdist %>% 
+  group_by(kreis) %>% 
+  summarise(n = n()) %>% 
+  filter(n==max(.$n)) %>% 
+  .$kreis
+
+# run changepoint analysis
+df_ger_socdist_cpt_results <- df_ger_socdist %>% 
+  select(kreis, socdist_single_tile) %>%
+  filter(kreis %in% kreis_complete) %>% 
+  split(.$kreis) %>%
+  map(~ cpt.meanvar(as.vector(.$socdist_single_tile),
+                    #penalty = 'Asymptotic',
+                    class=TRUE,
+                    param.estimates=TRUE,
+                    Q=1,
+                    test.stat = 'Normal'))
+
+df_ger_socdist_cpt_results_2 <- df_ger_socdist %>% 
+  select(kreis, socdist_tiles) %>%
+  filter(kreis %in% kreis_complete) %>% 
+  split(.$kreis) %>%
+  map(~ cpt.meanvar(as.vector(.$socdist_tiles),
+                    class=TRUE,
+                    param.estimates=TRUE,
+                    Q=1,
+                    test.stat = 'Normal'))
+
+# calculate change point
+df_ger_socdist_cpt_day <- df_ger_socdist_cpt_results %>% 
+  map(cpts) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(cpt_day_socdist = '.') %>%
+  rownames_to_column('kreis')
+
+df_ger_socdist_cpt_day_2 <- df_ger_socdist_cpt_results_2 %>% 
+  map(cpts) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(cpt_day_socdist_2 = '.') %>%
+  rownames_to_column('kreis')
+
+# calculate mean differences
+df_ger_socdist_cpt_mean_diff <- df_ger_socdist_cpt_results %>% 
+  map(param.est) %>% 
+  map(~ .$mean) %>% 
+  map(~ .[2]) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(mean_diff_socdist = '.') %>%
+  rownames_to_column('kreis')
+
+df_ger_socdist_cpt_mean_diff_2 <- df_ger_socdist_cpt_results_2 %>% 
+  map(param.est) %>% 
+  map(~ .$mean) %>% 
+  map(~ -.[2]) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rename(mean_diff_socdist_2 = '.') %>%
+  rownames_to_column('kreis')
+
+# calculate means 
+df_ger_socdist_mean <- df_ger_socdist %>%
+  group_by(kreis) %>%
+  summarise(mean_socdist = mean(socdist_single_tile))
+
+df_ger_socdist_mean_2 <- df_ger_socdist %>%
+  group_by(kreis) %>%
+  summarise(mean_socdist_2 = -mean(socdist_tiles))
+
+# merge with county data
+df_ger_cpt_socdist <- df_ger_socdist %>%
+  select(-date, -time, -socdist_single_tile, -socdist_tiles) %>%
+  distinct() %>%
+  left_join(df_ger_socdist_cpt_day, by='kreis') %>%
+  left_join(df_ger_socdist_cpt_day_2, by='kreis') %>%
+  left_join(df_ger_socdist_cpt_mean_diff, by='kreis') %>%
+  left_join(df_ger_socdist_cpt_mean_diff_2, by='kreis') %>%
+  left_join(df_ger_socdist_mean, by='kreis') %>%
+  left_join(df_ger_socdist_mean_2, by='kreis') %>%
+  left_join(select(df_ger_onset_prev, kreis, onset_prev), by='kreis') %>%
+  left_join(select(df_ger_slope_prev, kreis, slope_prev), by='kreis')
+
+# handle censored data
+df_ger_cpt_socdist <- df_ger_cpt_socdist %>% 
+  mutate(cpt_day_socdist = ifelse(is.na(cpt_day_socdist), 
+                                  as.numeric(diff(range(df_ger_socdist$date))), 
+                                  cpt_day_socdist)) %>% 
+  mutate(event = ifelse(cpt_day_socdist >= 
+                          as.numeric(diff(range(df_ger_socdist$date))), 0, 1))
+```
+
+
+### Remove incomplete cases
+```{r message=FALSE, warning=FALSE}
+df_ger_prev_unscaled <- inner_join(df_ger_slope_prev, df_ger_cpt_socdist %>% select(kreis), by='kreis')
+df_ger_death_unscaled <- inner_join(df_ger_death, df_ger_cpt_socdist %>% select(kreis), by='kreis')
+df_ger_socdist_unscaled <- inner_join(df_ger_cpt_socdist, df_ger_slope_prev %>% select(kreis), by='kreis')
+
+kreis_list <- df_ger_prev_unscaled %>% select(kreis)
+
+kreis_list %>% write_csv('kreis_list.csv')
+
+df_ger_prev_unscaled %>% merge(df_ger_death_unscaled %>% select(kreis:death_rate_0930))  %>% 
+  merge(df_ger_socdist_unscaled %>% select(kreis, cpt_day_socdist_2, mean_diff_socdist_2)) %>% 
+  select(-event) %>% write_csv('ger_all_variables.csv')
+```
+
+
+### Rescale Data
+```{r message=FALSE, warning=FALSE}
+df_ger_prev_scaled <- df_ger_prev_unscaled %>% 
+  mutate_at(vars(-kreis, -event), scale)
+```
+
+```{r message=FALSE, warning=FALSE}
+df_ger_death_scaled <- df_ger_death_unscaled %>% 
+  mutate_at(vars(-kreis), scale)
+```
+
+```{r message=FALSE, warning=FALSE}
+df_ger_socdist_scaled <- df_ger_socdist_unscaled %>%
+  mutate_at(vars(-kreis, -event), scale)
+```
+
+
+### Calculate spatial lags 
+```{r message=FALSE, warning=FALSE}
+# create UDF to calculate lagged variables
+calc_lags <- function(df, weights, cols){
+  
+  cols_only <- df %>% select(cols)
+  cols_lag <- weights %*% as.matrix(cols_only) %>% 
+  as.matrix() %>% as.data.frame()
+names(cols_lag) <- paste0(names(cols_lag), '_lag')
+
+return(cols_lag)
+}
+```
+
+```{r message=FALSE, warning=FALSE}
+# read_weight matrix 
+weight_mat_norm <- read_csv('GER_spatial_weights.csv')
+
+weight_mat_norm <- weight_mat_norm %>% select(-kreis) %>% as.matrix()
+
+dim(weight_mat_norm)
+```
+
+```{r message=FALSE, warning=FALSE}
+# generate spatially lagged y 
+y_only <- df_ger_prev_scaled %>% select(onset_prev,slope_prev,slope_prev_var) %>% names()
+y_lag <- calc_lags(df_ger_prev_scaled, weight_mat_norm, y_only)
+
+# generate spatially lagged X
+X_only <- df_ger_prev_scaled %>% select(academics:pers_n) %>% names()
+X_lag <- calc_lags(df_ger_prev_scaled, weight_mat_norm, X_only)
+
+# bind new variables to df
+df_ger_prev_scaled <- cbind(df_ger_prev_scaled, y_lag, X_lag)
+
+```
+
+```{r message=FALSE, warning=FALSE}
+# generate spatially lagged y 
+y_only <- df_ger_death_scaled %>% select(case_rate_0331:death_rate_0930) %>% names()
+y_lag <- calc_lags(df_ger_death_scaled, weight_mat_norm, y_only)
+
+# generate spatially lagged X
+X_only <- df_ger_death_scaled %>% select(academics:pers_n) %>% names()
+X_lag <- calc_lags(df_ger_death_scaled, weight_mat_norm, X_only)
+
+# bind new variables to df
+df_ger_death_scaled <- cbind(df_ger_death_scaled, y_lag, X_lag)
+
+```
+
+```{r message=FALSE, warning=FALSE}
+# generate spatially lagged y 
+y_only <- df_ger_socdist_scaled %>% select(cpt_day_socdist_2,mean_diff_socdist_2) %>% names()
+y_lag <- calc_lags(df_ger_socdist_scaled, weight_mat_norm, y_only)
+
+# generate spatially lagged X
+X_only <- df_ger_socdist_scaled %>% select(academics:pers_n) %>% names()
+X_lag <- calc_lags(df_ger_socdist_scaled, weight_mat_norm, X_only)
+
+# bind new variables to df
+df_ger_socdist_scaled <- cbind(df_ger_socdist_scaled, y_lag, X_lag)
+
+```
+
+```{r message=FALSE, warning=FALSE}
+write_csv(df_ger_prev_scaled, 'df_ger_slope_prev.csv')
+write_csv(df_ger_death_scaled, 'df_ger_death_scaled.csv')
+write_csv(df_ger_socdist_scaled, 'df_ger_cpt_socdist.csv')
+```
+
+# Run Specification Curve Analysis 
+```{r message=FALSE, warning=FALSE}
+# define function to calculate specification curve analyses for all traits
+spec_calculate <- function(df, y, model, controls, all.comb = T){
+  
+  spec_results_o <- run_specs(df = df,
+                       y = c(y), x = c("pers_o"), 
+                       model = c(model), controls = controls, 
+                       all.comb = all.comb)
+  
+  spec_results_c <- run_specs(df = df, 
+                       y = c(y), x = c("pers_c"), 
+                       model = c(model), controls = controls, 
+                       all.comb = all.comb)
+  
+  spec_results_e <- run_specs(df = df, 
+                       y = c(y), x = c("pers_e"), 
+                       model = c(model), controls = controls, 
+                       all.comb = all.comb)
+  
+  spec_results_a <- run_specs(df = df, 
+                       y = c(y), x = c("pers_a"), 
+                       model = c(model), controls = controls, 
+                       all.comb = all.comb)
+  
+  spec_results_n <- run_specs(df = df, 
+                       y = c(y), x = c("pers_n"), 
+                       model = c(model), controls = controls, 
+                       all.comb = all.comb)
+  
+  spec_results <- list(spec_results_o, spec_results_c, spec_results_e, 
+                      spec_results_a, spec_results_n)
+  
+  names(spec_results) <- list('spec_results_o', 'spec_results_c', 'spec_results_e', 
+                      'spec_results_a', 'spec_results_n')
+
+  return(spec_results)
+  }
+```
+
+
+```{r message=FALSE, warning=FALSE}
+
+# adapted from specr package code
+format_results <- function(df, var, null = 0, desc = FALSE) {
+
+  # rank specs
+  if (isFALSE(desc)) {
+    df <- df %>%
+      dplyr::arrange(!! var)
+  } else {
+    df <- df %>%
+      dplyr::arrange(desc(!! var))
+  }
+
+  # create rank variable and color significance
+  df <- df %>%
+    dplyr::mutate(specifications = 1:nrow(df),
+                  color = case_when(conf.low > null ~ "#377eb8",
+                                    conf.high < null ~ "#e41a1c",
+                                    TRUE ~ "darkgrey"))
+  return(df)
+}
+
+
+# define function to plot single specification curve
+plot_curves <- function(results, filename, hr=F){
+  
+  file_path_eps <- paste0("../../Plots/GER/", filename,".eps")
+  file_path_pdf <- paste0("../../Plots/GER/", filename,".pdf")
+  file_path_png <- paste0("../../Plots/GER/", filename,".png")
+
+  if(hr==F){
+    
+    results %>%
+    format_results(var = .$estimate, null = 0, desc = F) %>%
+    ggplot(aes(x = specifications,
+               y = estimate,
+               ymin = conf.low,
+               ymax = conf.high,
+               color = color)) +
+    geom_point(aes(color = color),
+               size = 1) +
+    theme_minimal() +
+    scale_color_identity() +
+    theme(strip.text = element_blank(),
+          axis.line = element_line("black", size = .5),
+          legend.position = "none",
+          panel.spacing = unit(.75, "lines"),
+          axis.text = element_text(colour = "black")) +
+    labs(x = "") +
+      geom_pointrange(alpha = 0.05,
+                      size = .6,
+                      fatten = 1) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+    labs(x = "", y = "standarized coefficient") + 
+      coord_fixed(ratio = 2000, ylim = c(-0.4, 0.4)) +
+      theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(), 
+            axis.line = element_line(colour = "black")) +
+      ggsave(file=file_path_eps, device = 'eps')+
+      ggsave(file=file_path_pdf, device = 'pdf')+
+      ggsave(file=file_path_png, device = 'png')
+    
+  }else{
+    
+    results %>%
+    format_results(var = .$estimate, null = 1, desc = F) %>%
+    ggplot(aes(x = specifications,
+               y = estimate,
+               ymin = conf.low,
+               ymax = conf.high,
+               color = color)) +
+    geom_point(aes(color = color),
+               size = 1) +
+    theme_minimal() +
+    scale_color_identity() +
+    theme(strip.text = element_blank(),
+          axis.line = element_line("black", size = .5),
+          legend.position = "none",
+          panel.spacing = unit(.75, "lines"),
+          axis.text = element_text(colour = "black")) +
+    labs(x = "") +
+      geom_pointrange(alpha = 0.05,
+                      size = .6,
+                      fatten = 1) +
+    geom_hline(yintercept = 1, linetype = "dashed", color = "black") +
+    labs(x = "", y = "standarized coefficient") + 
+      coord_fixed(ratio = 2000, ylim = c(0.6, 1.4)) +
+      theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(), 
+      axis.line = element_line(colour = "black")) +
+      ggsave(file=file_path_eps, device = 'eps')+
+      ggsave(file=file_path_pdf, device = 'pdf')+
+      ggsave(file=file_path_png, device = 'png')  
+    }
+  
+}
+
+# define function to plot all curves in list
+plot_all_curves <- function(ls, analysis, hr=F){
+  
+  pers <- c('o', 'c', 'e', 'a', 'n')
+  filenames <- as.list(paste0(analysis, '_', pers))
+  hr <- as.list(rep(hr, 5))
+  pmap(list(ls, filenames, hr), plot_curves)
+}
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# define function to calculate summary stats for single specification curve
+calc_summary <- function(df){
+  
+  dft <- df %>% select(estimate:fit_nobs)
+  dft <- dft %>% mutate(significant = as.numeric(p.value<0.05),
+                        positive = as.numeric(statistic>0), 
+                        negative = as.numeric(statistic<0), 
+                        significant_positive = as.numeric(p.value<0.05 & statistic>0),
+                        significant_negative = as.numeric(p.value<0.05 & statistic<0))
+  
+  mean_temp <- dft %>% map_if(is.numeric, mean, .else=NULL) %>% as.data.frame()
+  sd_temp <- dft %>% map_if(is.numeric, sd, .else=NULL) %>% as.data.frame()
+  
+  df_temp <- rbind(mean_temp, sd_temp)
+  row.names(df_temp) <- c('mean', 'sd')
+  
+  return(df_temp)
+}
+
+# define function to calculate summary stats for all curves in list
+calc_all_summaries <- function(ls){
+  
+  ls <- ls %>% map(calc_summary)
+  names(ls) <- c('pers_o', 'pers_c', 'pers_e', 'pers_a', 'pers_n')
+  return(ls)
+}
+
+```
+
+```{r message=FALSE, warning=FALSE}
+coef_to_hr <- function(df){
+  
+  df %>% mutate(conf.low = exp(estimate-1.96*std.error),
+           conf.high = exp(estimate+1.96*std.error),
+           estimate = exp(estimate)) 
+}
+
+filter_socdist <- function(df){
+  
+  df %>% filter(str_detect(controls, 'onset_prev') & 
+                  str_detect(controls, 'slope_prev'))
+}
+```
+
+```{r message=FALSE, warning=FALSE}
+covariates <- c("airport_dist", "conservative", 'male', 'age', 'popdens',
+                'manufact', 'tourism', 'academics', 'medinc', 'healthcare',
+                'temp')
+```
+
+
+## Predict Onset
+```{r message=FALSE, warning=FALSE}
+cox_model <- function(formula, data){
+  formula <- as.formula(formula)
+  coxph(formula = formula, data = data)}
+```
+
+```{r message=FALSE, warning=FALSE}
+cox_onset_prev <- spec_calculate(df = df_ger_prev_scaled, 
+               y = "Surv(onset_prev, event)", 
+               model = "cox_model", 
+               controls = covariates %>% append('onset_prev_lag'),
+               all.comb = T)
+
+cox_onset_prev_hr <- cox_onset_prev %>% map(coef_to_hr)
+
+calc_all_summaries(cox_onset_prev_hr)
+
+plot_all_curves(cox_onset_prev_hr, 'cox_onset_prev_hr', hr = T)
+```
+
+```{r message=FALSE, warning=FALSE}
+cox_onset_prev_ctrl <- coxph(Surv(onset_prev, event) ~ airport_dist + 
+                               conservative + male + age + popdens + manufact +
+                               tourism + academics + medinc + healthcare + 
+                               temp + onset_prev_lag, 
+                             data = df_ger_prev_scaled)
+
+summary(cox_onset_prev_ctrl)
+```
+
+
+# Predict Slopes
+```{r message=FALSE, warning=FALSE}
+# fixed time windows
+lm_slope_prev <- spec_calculate(df = df_ger_prev_scaled, 
+               y = "slope_prev", 
+               model = "lm", 
+               controls = covariates %>% append('slope_prev_lag'),
+               all.comb = T)
+
+calc_all_summaries(lm_slope_prev)
+
+plot_all_curves(lm_slope_prev, 'lm_slope_prev')
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+lm_slope_prev_ctrl <- lm(slope_prev ~ airport_dist + 
+                               conservative + male + age + popdens + manufact +
+                               tourism + academics + medinc + healthcare + 
+                               temp + slope_prev_lag, 
+                             data = df_ger_prev_scaled)
+
+summary(lm_slope_prev_ctrl)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+# variable time windows
+lm_slope_prev_var <- spec_calculate(df = df_ger_prev_scaled, 
+               y = "slope_prev_var", 
+               model = "lm", 
+               controls = covariates %>% append('slope_prev_var_lag'),
+               all.comb = T)
+
+calc_all_summaries(lm_slope_prev_var)
+
+plot_all_curves(lm_slope_prev_var, 'lm_slope_prev_var')
+```
+
+```{r message=FALSE, warning=FALSE}
+lm_slope_prev_var_ctrl <- lm(slope_prev_var ~ airport_dist + 
+                               conservative + male + age + popdens + manufact +
+                               tourism + academics + medinc + healthcare + 
+                               temp + slope_prev_var_lag, 
+                             data = df_ger_prev_scaled)
+
+summary(lm_slope_prev_var_ctrl)
+```
+
+
+# Predict Cases
+```{r message=FALSE, warning=FALSE}
+lm_cases_0331 <- spec_calculate(df = df_ger_death_scaled, 
+               y = "case_rate_0331", 
+               model = "lm", 
+               controls = covariates %>% append('case_rate_0331_lag'),
+               all.comb = T)
+
+calc_all_summaries(lm_cases_0331)
+
+plot_all_curves(lm_cases_0331, 'lm_cases_0331')
+```
+
+```{r message=FALSE, warning=FALSE}
+lm_cases_0331_ctrl <- lm(case_rate_0331 ~ airport_dist + 
+                               conservative + male + age + popdens + manufact +
+                               tourism + academics + medinc + healthcare + 
+                               temp + case_rate_0331_lag, 
+                             data = df_ger_death_scaled)
+
+summary(lm_cases_0331_ctrl)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+lm_cases_0930 <- spec_calculate(df = df_ger_death_scaled, 
+               y = "case_rate_0930", 
+               model = "lm", 
+               controls = covariates %>% append('case_rate_0930_lag'),
+               all.comb = T)
+
+calc_all_summaries(lm_cases_0930)
+
+plot_all_curves(lm_cases_0930, 'lm_cases_0930')
+```
+```{r message=FALSE, warning=FALSE}
+lm_cases_0930_ctrl <- lm(case_rate_0930 ~ airport_dist + 
+                               conservative + male + age + popdens + manufact +
+                               tourism + academics + medinc + healthcare + 
+                               temp + case_rate_0930_lag, 
+                             data = df_ger_death_scaled)
+
+summary(lm_cases_0930_ctrl)
+```
+
+# Predict Deaths
+```{r message=FALSE, warning=FALSE}
+lm_deaths_0331 <- spec_calculate(df = df_ger_death_scaled, 
+               y = "death_rate_0331", 
+               model = "lm", 
+               controls = covariates %>% append('death_rate_0331_lag'),
+               all.comb = T)
+
+calc_all_summaries(lm_deaths_0331)
+
+plot_all_curves(lm_deaths_0331, 'lm_deaths_0331')
+```
+
+```{r message=FALSE, warning=FALSE}
+lm_deaths_0331_ctrl <- lm(death_rate_0331 ~ airport_dist + 
+                               conservative + male + age + popdens + manufact +
+                               tourism + academics + medinc + healthcare + 
+                               temp + death_rate_0331_lag, 
+                             data = df_ger_death_scaled)
+
+summary(lm_deaths_0331_ctrl)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+lm_deaths_0930 <- spec_calculate(df = df_ger_death_scaled, 
+               y = "death_rate_0930", 
+               model = "lm", 
+               controls = covariates %>% append('death_rate_0930_lag'),
+               all.comb = T)
+
+calc_all_summaries(lm_deaths_0930)
+
+plot_all_curves(lm_deaths_0930, 'lm_deaths_0930')
+```
+
+```{r message=FALSE, warning=FALSE}
+lm_deaths_0930_ctrl <- lm(death_rate_0930 ~ airport_dist + 
+                               conservative + male + age + popdens + manufact +
+                               tourism + academics + medinc + healthcare + 
+                               temp + death_rate_0930_lag, 
+                             data = df_ger_death_scaled)
+
+summary(lm_deaths_0930_ctrl)
+```
+
+# Predict Socdist Onset
+```{r message=FALSE, warning=FALSE}
+cox_onset_socdist <- spec_calculate(df = df_ger_socdist_scaled, 
+               y = "Surv(cpt_day_socdist_2, event)", 
+               model = "cox_model", 
+               controls = covariates %>% 
+                 append(c('cpt_day_socdist_2_lag', 'onset_prev', 'slope_prev')),
+               all.comb = T)
+
+cox_onset_socdist <- cox_onset_socdist %>% map(filter_socdist)
+
+cox_onset_socdist_hr <- cox_onset_socdist %>% map(coef_to_hr)
+
+calc_all_summaries(cox_onset_socdist_hr)
+
+plot_all_curves(cox_onset_socdist_hr, 'cox_onset_socdist_hr', hr = T)
+```
+
+```{r message=FALSE, warning=FALSE}
+cox_onset_socdist_ctrl <- coxph(Surv(cpt_day_socdist_2, event) ~ airport_dist + 
+                               conservative + male + age + popdens + manufact +
+                               tourism + academics + medinc + healthcare + 
+                               temp + onset_prev + slope_prev +
+                                 cpt_day_socdist_2_lag,
+                             data = df_ger_socdist_scaled)
+
+summary(cox_onset_socdist_ctrl)
+```
+
+# Predict Socdist Mean
+```{r message=FALSE, warning=FALSE}
+lm_mean_socdist <- spec_calculate(df = df_ger_socdist_scaled, 
+               y = "mean_diff_socdist_2", 
+               model = "lm", 
+               controls = covariates %>% 
+                 append(c('mean_diff_socdist_2_lag', 'onset_prev', 'slope_prev')), 
+               all.comb = T)
+
+lm_mean_socdist <- lm_mean_socdist %>% map(filter_socdist)
+
+calc_all_summaries(lm_mean_socdist)
+
+plot_all_curves(lm_mean_socdist, 'lm_mean_socdist')
+```
+
+
+```{r message=FALSE, warning=FALSE}
+lm_mean_socdist_ctrl <- lm(mean_diff_socdist_2 ~ airport_dist + 
+                               conservative + male + age + popdens + manufact +
+                               tourism + academics + medinc + healthcare + 
+                               temp + onset_prev + slope_prev +
+                                 mean_diff_socdist_2_lag,
+                             data = df_ger_socdist_scaled)
+
+summary(lm_mean_socdist_ctrl)
+```
+
+# Save all results 
+```{r}
+results_ger <- list(cox_onset_prev_hr, lm_slope_prev, lm_slope_prev_var, 
+                   lm_cases_0331, lm_cases_0930, lm_deaths_0331, lm_deaths_0930, 
+                   cox_onset_socdist_hr, lm_mean_socdist)
+
+
+names(results_ger) <- list('cox_onset_prev_hr', 'lm_slope_prev', 'lm_slope_prev_var', 
+                   'lm_cases_0331', 'lm_cases_0930', 'lm_deaths_0331', 'lm_deaths_0930', 
+                   'cox_onset_socdist_hr', 'lm_mean_socdist')
+
+save(results_ger, file="GER_spec_results.RData")
+```
+
+# Descriptives
+### Distributions
+```{r message=FALSE, warning=FALSE}
+df_ger_desc <- df_ger_socdist %>% 
+  dplyr::select(pers_o, pers_c, pers_e, pers_a, pers_n, 
+                age, male, conservative, 
+                academics, medinc, manufact, 
+                airport_dist, tourism, healthcare, popdens) %>% 
+  distinct() %>% drop_na()
+
+ger_means <- df_ger_desc %>% summarise_all(mean)
+ger_sd <- df_ger_desc %>% summarise_all(sd)
+
+desc_ger <- rbind(ger_means, ger_sd) %>% t() %>% round(3) %>% as.data.frame()
+
+desc_ger %>% rownames_to_column() %>% write_csv('ger_descriptives.csv')
+desc_ger  
+```
+
+
+
+### Explore correlations
+```{r message=FALSE, warning=FALSE}
+a <- df_ger_socdist_unscaled %>% select(kreis, pers_o:pers_n, cpt_day_socdist, mean_diff_socdist)
+b <- df_ger_prev_unscaled %>% select(kreis, onset_prev, slope_prev)
+c <- df_ger_death_unscaled %>% select(kreis, case_rate_0331:death_rate_0930)
+
+ger_joined <- plyr::join_all(list(a, b, c), by='kreis')
+
+ger_joined %>% select(-kreis) %>% cor(use = 'pairwise.complete')
+```
+
+
+```{r message=FALSE, warning=FALSE}
+ger_means <- ger_joined %>% select(-kreis) %>% summarise_all(mean)
+ger_sd <- ger_joined %>% select(-kreis) %>% summarise_all(sd)
+
+desc_ger <- rbind(ger_means, ger_sd) %>% t() %>% round(3) %>% as.data.frame() %>%
+  rename(mean=V1, sd=V2)
+
+desc_ger %>% rownames_to_column() %>% write_csv('ger_descriptives.csv')
+desc_ger  
+```
+
+# Visualizations 
+```{r message=FALSE, warning=FALSE}
+
+df_ger_prev <- read_csv('GER_prevalence.csv')
+
+df_ger_prev <- df_ger_prev %>%
+  mutate(date = as.Date(date, "%d%b%Y"),
+         kreis = as.character(kreis)) %>% 
+  dplyr::select(kreis, date, rate_day) %>%
+  filter(date < '2020-04-01')
+
+# create sequence of dates
+date_sequence <- seq.Date(min(df_ger_prev$date),
+                          max(df_ger_prev$date), 1)
+                     
+# create data frame with time sequence
+df_dates = data.frame(date_sequence, 1:length(date_sequence))
+names(df_dates) <- c('date', 'time')
+
+tto <- df_ger_prev_unscaled %>%
+  filter(event==1) %>%
+  merge(df_dates, by.x = 'onset_prev', by.y = 'time') %>%
+  ggplot(aes(x=date+1)) + 
+  geom_histogram(bins=15) +
+  theme_light() +
+  ggtitle('Distribution - COVID-19 Onset') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Date')
+  
+soa <- df_ger_slope_prev %>% 
+  ggplot(aes(x=slope_prev)) + 
+  geom_histogram(bins=15) +
+  theme_light() +
+  ggtitle('Distribution - COVID-19 Growth Rates') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Standardized growth rates')
+
+figure <- ggarrange(tto, soa,
+                    labels = c("", ""),
+                    ncol = 2, nrow = 1)
+
+figure
+```
+
+```{r message=FALSE, warning=FALSE}
+tto <- df_ger_death %>% 
+  ggplot(aes(x=case_rate_0930)) + 
+  geom_histogram(bins=15) +
+  theme_light() +
+  ggtitle('Distribution - Cumulative Case Rates') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Cases Per 1000 Inhabitants')
+  
+soa <- df_ger_death %>%
+  ggplot(aes(x=death_rate_0930)) +
+  geom_histogram(bins=15) +
+  theme_light() +
+  ggtitle('Distribution - Cumulative Death Rates') +
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Deaths Per 1000 Inhabitants')
+
+
+figure <- ggarrange(tto, soa,
+                    labels = c("", ""),
+                    ncol = 2, nrow = 1)
+figure
+```
+
+```{r message=FALSE, warning=FALSE}
+# create sequence of dates
+date_sequence <- seq.Date(min(df_ger_socdist$date),
+                          max(df_ger_socdist$date), 1)
+                     
+# create data frame with time sequence
+df_dates = data.frame(date_sequence, 1:length(date_sequence)) 
+names(df_dates) <- c('date', 'time')
+
+
+tto <- df_ger_cpt_socdist %>% 
+  merge(df_dates, by.x = 'cpt_day_socdist_2', by.y = 'time') %>%
+  #filter(cpt_day_socdist_2 < 30) %>% 
+  ggplot(aes(x=date+1)) + 
+  geom_histogram(bins=15) +
+  theme_light() +
+  ggtitle('Distribution - Time to Adoption') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Date') +
+  xlim(c(as.Date('2020-03-01'), as.Date('2020-03-31')))
+  
+soa <- df_ger_cpt_socdist %>% 
+  ggplot(aes(x=mean_diff_socdist_2)) + 
+  geom_histogram(bins=15) +
+  theme_light() +
+  ggtitle('Distribution - Strength of Adjustment') + 
+  theme(plot.title = element_text(size=11)) +
+  ylab('Absolute frequency') +
+  xlab('Standardized mean difference')
+
+
+figure <- ggarrange(tto, soa,
+                    labels = c("", ""),
+                    ncol = 2, nrow = 1)
+figure
+```
