@@ -1257,12 +1257,12 @@ df_us_fb_ggl %>% split(.$county_fips) %>%
 ```
 
 # Visualize distribution of effect sizes
-```{r}
+```{r  message=FALSE, warning=FALSE}
 load("US_spec_results.RData")
 load("../GER/GER_spec_results.RData")
 ```
 
-```{r}
+```{r  message=FALSE, warning=FALSE}
 plot_dist <- function(df, filename){
   
   w <- 5
@@ -1301,7 +1301,7 @@ plot_all_dist <- function(ls, analysis, hr=F){
 ```
 
 
-```{r}
+```{r  message=FALSE, warning=FALSE}
 join_results <- function(list_us, list_ger){
   
   US = "US"
@@ -1317,7 +1317,7 @@ join_results <- function(list_us, list_ger){
 }
 ```
 
-```{r}
+```{r  message=FALSE, warning=FALSE}
 join_results(results_us$cox_onset_prev_hr, results_ger$cox_onset_prev_hr) %>% 
   plot_all_dist(analysis = 'cox_onset_prev_hr')
 
@@ -1347,7 +1347,7 @@ join_results(results_us$lm_mean_socdist, results_ger$lm_mean_socdist) %>%
 
 ```
 
-```{r}
+```{r  message=FALSE, warning=FALSE}
 
 calculate_effsize <- function(df){
   df %>% summarise(d = effsize::cohen.d(estimate ~ country)$estimate, 

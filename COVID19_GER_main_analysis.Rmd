@@ -23,8 +23,6 @@ library(survival)
 library(survMisc)
 library(changepoint)
 library(specr)
-
-source('COVID19_functions.R')
 ```
 
 # Prepare data

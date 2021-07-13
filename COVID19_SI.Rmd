@@ -1,5 +1,5 @@
 ---
-title: "Supplementary Information"
+title: "Supplementary Information - Regional personality differences predict variation in COVID-19 infections and social distancing behavior"
 output:
   html_document:
     df_print: paged
@@ -25,16 +25,13 @@ library(ggplot2)
 library(dplyr)
 library(tidyverse)
 library(party)
-library(survminer)
+library(survminer)3
 library(survival)
 library(survMisc)
 library(changepoint)
 library(specr)
 library(DT)
 library(stargazer)
-
-
-source('COVID19_functions.R')
 ```
 
 
@@ -2210,7 +2207,7 @@ summary(m30 <- lm(T1_community_comparison ~ ES+ Age + as.factor(Gender) + Educat
 ```
 
 
-The following analyses provide additional empirical support for the proposition that the effects of regional agreeableness and conscientiousness might, in part, be explained by the stronger adherence of agreeable and conscientious individuals to local community norms (rather than national guidelines). We analysed a sample of 1,038 US Americans who completed a survey between 2020-03-20 and 2020-05-22, the early stage of the COVID-19 pandemic, through the online panel Amazon Mechanical Turk. Among others, the survey assessed the extent to which participants (i) followed the recommendations of local leaders and experts ("adherence-self") and (ii) expected other community member to follow the recommendations of local leaders and experts ("adherence other", both measured on a 7-point scale, ranging from 1 = "Not at all"" to 7 = "Very often"). In addition, participants reported on their socio-demographic characteristics, including age, gender, ethnicity, education, employment status and political ideology. The Big Five personality traits were assessed in another wave of the survey that was collected between 2020-05-07 and 2020-05-11 and can be mapped onto the first survey. They were measures using a well-established short ten-item personality inventory (TIPI; Gosling, Swann, Rentfrow, 2003).
+The following analyses provide additional empirical support for the proposition that the effects of regional agreeableness and conscientiousness might, in part, be explained by the stronger adherence of agreeable and conscientious individuals to local community norms (rather than national guidelines). We analysed a sample of 1,038 US Americans who completed a survey between 2020-03-20 and 2020-03-22, the early stage of the COVID-19 pandemic, through the online panel Amazon Mechanical Turk. Among others, the survey assessed the extent to which participants (i) followed the recommendations of local leaders and experts ("adherence-self") and (ii) expected other community member to follow the recommendations of local leaders and experts ("adherence other", both measured on a 7-point scale, ranging from 1 = "Not at all"" to 7 = "Very often"). In addition, participants reported on their socio-demographic characteristics, including age, gender, ethnicity, education, employment status and political ideology. The Big Five personality traits were assessed in another wave of the survey that was collected between 2020-05-07 and 2020-05-11 and can be mapped onto the first survey. They were measures using a well-established short ten-item personality inventory (TIPI; Gosling, Swann, Rentfrow, 2003).
 
 We conducted two sets of analyses to test whether agreeable and conscientious individuals are indeed more likely to follow the advice of local leaders and experts. First, we tested whether Agreeableness and Conscientiousness predict higher self-reported levels of following the recommendations of community leaders (adherence-self). Second, we tested whether Agreeableness and Conscientiousness predict higher alignment between one's own behavior and the expected behavior of other community members (community-alignment), measured as the absolute difference between the adherence-self and adherence-other. To clearly demarcate our expected effects on community alignment from the potential effects of Agreeableness and Conscientiousness on perceiving oneself to be more compliant than others, we also calculated the signed difference between adherence-self and adherence-others (self-community-comparison); with scores bigger than zero indicating a participant's perception that they are more compliant than other community members, and scores lower than zero indicating the opposite). We ran linear regression analyses to regress the three outcomes - adherence self, community alignment, and community comparison - onto the Big Five personality traits in Model 1 and added the set of control variables in Model 2. The results are shown in the tables below (the reference categories for the categorical variables are "Male", "White", and "Full-time").
 
